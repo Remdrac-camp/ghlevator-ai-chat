@@ -39,9 +39,15 @@ const CHATBOT_PARAMETERS = [
 
 export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId }) => {
   const { toast } = useToast();
-  const [newMapping, setNewMapping] = React.useState<Partial<GhlFieldMapping>>({
+  const [newMapping, setNewMapping] = React.useState<{
+    chatbot_id: string;
+    field_type: 'custom_value' | 'custom_field';
+    ghl_field_key: string;
+    chatbot_parameter?: 'openai_key' | 'system_prompt' | 'welcome_message' | 'temperature' | 'max_tokens';
+  }>({
     chatbot_id: chatbotId,
     field_type: 'custom_value',
+    ghl_field_key: '',
   });
 
   const { data: mappings, refetch } = useQuery({
@@ -58,7 +64,12 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
   });
 
   const addMappingMutation = useMutation({
-    mutationFn: async (mapping: Partial<GhlFieldMapping>) => {
+    mutationFn: async (mapping: {
+      chatbot_id: string;
+      field_type: string;
+      ghl_field_key: string;
+      chatbot_parameter: string;
+    }) => {
       const { data, error } = await supabase
         .from('ghl_field_mappings')
         .insert([mapping])
@@ -74,7 +85,11 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
         description: "Le mapping GHL a été ajouté avec succès.",
       });
       refetch();
-      setNewMapping({ chatbot_id: chatbotId, field_type: 'custom_value' });
+      setNewMapping({ 
+        chatbot_id: chatbotId, 
+        field_type: 'custom_value',
+        ghl_field_key: '' 
+      });
     },
     onError: (error) => {
       toast({
@@ -119,7 +134,16 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
       });
       return;
     }
-    addMappingMutation.mutate(newMapping);
+    
+    // Ensure all required fields are present in the object we send to Supabase
+    const mappingToAdd = {
+      chatbot_id: newMapping.chatbot_id,
+      field_type: newMapping.field_type,
+      ghl_field_key: newMapping.ghl_field_key,
+      chatbot_parameter: newMapping.chatbot_parameter
+    };
+    
+    addMappingMutation.mutate(mappingToAdd);
   };
 
   return (
