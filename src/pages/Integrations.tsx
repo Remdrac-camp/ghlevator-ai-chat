@@ -134,6 +134,9 @@ const Integrations = () => {
       localStorage.setItem('ghlIsAgencyAccount', 'false');
     }
     
+    // Sauvegarder la clé API GHL pour une utilisation ultérieure
+    localStorage.setItem('ghlApiKey', ghlApiKey);
+    
     toast({
       title: "Intégration réussie",
       description: ghlIds.companyId 

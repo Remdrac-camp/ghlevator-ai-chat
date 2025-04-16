@@ -177,7 +177,14 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
 
       // Get the locationId from localStorage - this is set in Integrations.tsx
       const locationId = localStorage.getItem('ghlLocationId');
+      console.log('LocationID from localStorage:', locationId);
+      
       if (!locationId) {
+        toast({
+          title: "Location ID manquant",
+          description: "Aucun Location ID trouvé. Assurez-vous que le compte GHL est correctement configuré dans les Intégrations.",
+          variant: "destructive",
+        });
         throw new Error('Location ID not found in local storage');
       }
 
@@ -199,12 +206,24 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
       }
       
       console.log(`Testing GHL field: ${searchKey} for parameter: ${parameterLabel}`);
+      console.log(`Using locationId: ${locationId}`);
+
+      // Get GHL API key from localStorage
+      const ghlApiKey = localStorage.getItem('ghlApiKey');
+      if (!ghlApiKey) {
+        toast({
+          title: "API GHL manquante",
+          description: "Aucune clé API GHL trouvée. Veuillez configurer l'intégration GHL d'abord.",
+          variant: "destructive",
+        });
+        throw new Error('No GHL API key found in local storage');
+      }
       
       // Call the test function
       const { data, error } = await supabase.functions.invoke('test-ghl-field', {
         body: {
           locationId: locationId,
-          ghlApiKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJsb2NhdGlvbl9pZCI6IkdHSnozZFBvZ2t5ZnF4NDM3d01IIiwidmVyc2lvbiI6MSwiaWF0IjoxNzQzNTg0MTUwMzYxLCJzdWIiOiJDbkxiTWZ0OVpydzRacllzNlB3ayJ9.07VgsMsZs2C0-oyiqlyfxm4PmSZcdcsDdvYHe4plKHc",
+          ghlApiKey: ghlApiKey,
           fieldKey: searchKey
         }
       });
@@ -242,7 +261,7 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
         )
       });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast({
         title: "Erreur de Test",
         description: `Erreur lors de la récupération de la valeur: ${error.message}`,
@@ -283,10 +302,23 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
   const findWelcomeMessages = async () => {
     // Get the locationId from localStorage - this is set in Integrations.tsx
     const locationId = localStorage.getItem('ghlLocationId');
+    console.log('LocationID from localStorage:', locationId);
+
     if (!locationId) {
       toast({
-        title: "Erreur",
-        description: "Location ID not found in local storage",
+        title: "Location ID manquant",
+        description: "Aucun Location ID trouvé. Assurez-vous que le compte GHL est correctement configuré dans les Intégrations.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Get GHL API key from localStorage
+    const ghlApiKey = localStorage.getItem('ghlApiKey');
+    if (!ghlApiKey) {
+      toast({
+        title: "API GHL manquante",
+        description: "Aucune clé API GHL trouvée. Veuillez configurer l'intégration GHL d'abord.",
         variant: "destructive",
       });
       return;
@@ -296,7 +328,7 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
     const { data, error } = await supabase.functions.invoke('test-ghl-field', {
       body: {
         locationId: locationId,
-        ghlApiKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJsb2NhdGlvbl9pZCI6IkdHSnozZFBvZ2t5ZnF4NDM3d01IIiwidmVyc2lvbiI6MSwiaWF0IjoxNzQzNTg0MTUwMzYxLCJzdWIiOiJDbkxiTWZ0OVpydzRacllzNlB3ayJ9.07VgsMsZs2C0-oyiqlyfxm4PmSZcdcsDdvYHe4plKHc",
+        ghlApiKey: ghlApiKey,
         fieldKey: "welcome_message"
       }
     });
