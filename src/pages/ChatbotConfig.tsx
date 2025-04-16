@@ -37,11 +37,12 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Objective } from '@/types';
+import { Objective, GhlAccount } from '@/types';
 import { Slider } from '@/components/ui/slider';
-import { AlertCircle, Save, Target, Bot, Webhook, MessageCircle } from 'lucide-react';
+import { AlertCircle, Save, Target, Bot, Webhook, MessageCircle, LinkIcon, Building } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { GhlFieldMappings } from '@/components/GhlFieldMappings';
+import { useToast } from '@/hooks/use-toast';
 
 const objectiveSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -54,8 +55,19 @@ const objectiveSchema = z.object({
 const ChatbotConfig = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { chatbots, updateChatbot, addObjective, updateObjective, removeObjective } = useChatbot();
+  const { 
+    chatbots, 
+    updateChatbot, 
+    addObjective, 
+    updateObjective, 
+    removeObjective,
+    goHighLevelConfig,
+    ghlSubAccounts = [],
+    linkChatbotToGhlAccount,
+    getLinkedGhlAccount 
+  } = useChatbot();
   const { apiKeys, updateApiKeys } = useAuth();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('basic');
   const [newObjective, setNewObjective] = useState<Omit<Objective, 'id' | 'completed'>>({
     name: '',
@@ -65,14 +77,18 @@ const ChatbotConfig = () => {
     order: 0
   });
   const [openaiKey, setOpenaiKey] = useState(apiKeys.openai || '');
+  const [selectedGhlAccountId, setSelectedGhlAccountId] = useState<string | null>(null);
 
   const chatbot = chatbots.find(c => c.id === id);
-  
+
   useEffect(() => {
     if (!chatbot) {
       navigate('/dashboard');
+    } else {
+      const linkedAccount = getLinkedGhlAccount(chatbot.id);
+      setSelectedGhlAccountId(linkedAccount?.id || null);
     }
-  }, [chatbot, navigate]);
+  }, [chatbot, navigate, getLinkedGhlAccount]);
 
   const form = useForm({
     defaultValues: {
@@ -86,6 +102,11 @@ const ChatbotConfig = () => {
     },
   });
 
+  const allGhlAccounts: Array<GhlAccount | {id: 'main', name: string}> = [
+    ...(goHighLevelConfig ? [{ id: 'main', name: 'Compte Principal GHL' }] : []),
+    ...ghlSubAccounts.filter(account => account.active)
+  ];
+  
   const handleSave = (data: any) => {
     if (!chatbot) return;
     
@@ -102,7 +123,10 @@ const ChatbotConfig = () => {
       }
     });
     
-    alert('Chatbot settings saved successfully!');
+    toast({
+      title: "Configuration sauvegardée",
+      description: "Les paramètres du chatbot ont été enregistrés avec succès."
+    });
   };
 
   const handleAddObjective = () => {
@@ -129,6 +153,22 @@ const ChatbotConfig = () => {
     }
   };
 
+  const handleLinkGhlAccount = (accountId: string) => {
+    if (!chatbot) return;
+    
+    linkChatbotToGhlAccount(chatbot.id, accountId === 'none' ? null : accountId);
+    setSelectedGhlAccountId(accountId === 'none' ? null : accountId);
+    
+    toast({
+      title: accountId === 'none' 
+        ? "Liaison supprimée" 
+        : "Compte GHL lié",
+      description: accountId === 'none'
+        ? "Le chatbot n'est plus lié à un compte GoHighLevel."
+        : "Le chatbot a été lié au compte GoHighLevel sélectionné."
+    });
+  };
+
   if (!chatbot) {
     return (
       <Layout requiresAuth>
@@ -138,6 +178,8 @@ const ChatbotConfig = () => {
       </Layout>
     );
   }
+
+  const linkedAccount = getLinkedGhlAccount(chatbot.id);
 
   return (
     <Layout requiresAuth>
@@ -158,7 +200,7 @@ const ChatbotConfig = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid grid-cols-5 mb-8">
+          <TabsList className="grid grid-cols-6 mb-8">
             <TabsTrigger value="basic" className="flex items-center">
               <Bot className="mr-2 h-4 w-4" />
               Basic Settings
@@ -171,12 +213,16 @@ const ChatbotConfig = () => {
               <Target className="mr-2 h-4 w-4" />
               Objectives
             </TabsTrigger>
+            <TabsTrigger value="ghl_link" className="flex items-center">
+              <LinkIcon className="mr-2 h-4 w-4" />
+              GHL Liaison
+            </TabsTrigger>
             <TabsTrigger value="webhook" className="flex items-center">
               <Webhook className="mr-2 h-4 w-4" />
               Webhook
             </TabsTrigger>
             <TabsTrigger value="ghl" className="flex items-center">
-              <Bot className="mr-2 h-4 w-4" />
+              <Building className="mr-2 h-4 w-4" />
               GHL Mappings
             </TabsTrigger>
           </TabsList>
@@ -407,6 +453,76 @@ const ChatbotConfig = () => {
                         )}
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="ghl_link">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Liaison avec un Compte GoHighLevel</CardTitle>
+                    <CardDescription>
+                      Liez ce chatbot à un compte GHL spécifique pour récupérer les données des champs personnalisés
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    {(!goHighLevelConfig && ghlSubAccounts.length === 0) ? (
+                      <div className="flex items-center p-4 rounded-md bg-yellow-50 border border-yellow-200">
+                        <AlertCircle className="h-5 w-5 text-yellow-600 mr-2" />
+                        <p className="text-sm text-yellow-800">
+                          Vous devez d'abord configurer GoHighLevel dans la page Intégrations pour pouvoir lier un compte.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="ghlAccount">Compte GoHighLevel</Label>
+                          <Select 
+                            value={selectedGhlAccountId || 'none'} 
+                            onValueChange={handleLinkGhlAccount}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Sélectionnez un compte" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Aucun compte (délier)</SelectItem>
+                              {allGhlAccounts.map((account) => (
+                                <SelectItem key={account.id} value={account.id}>
+                                  {account.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {linkedAccount && (
+                          <div className="rounded-lg bg-green-50 border border-green-200 p-4">
+                            <div className="flex items-start gap-2">
+                              <Building className="h-5 w-5 text-green-600 mt-0.5" />
+                              <div>
+                                <h3 className="font-medium">Compte lié: {linkedAccount.name}</h3>
+                                <p className="text-sm text-green-700">
+                                  {linkedAccount.locationId 
+                                    ? `Location ID: ${linkedAccount.locationId}` 
+                                    : linkedAccount.companyId 
+                                      ? `Company ID: ${linkedAccount.companyId}` 
+                                      : 'Aucun ID de location ou d\'entreprise trouvé'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="text-sm text-muted-foreground">
+                          <p>La liaison avec un compte GHL permet de:</p>
+                          <ul className="list-disc list-inside ml-2 mt-2 space-y-1">
+                            <li>Récupérer les champs personnalisés du compte spécifique</li>
+                            <li>Envoyer les données collectées au bon compte</li>
+                            <li>Gérer plusieurs chatbots pour différents clients</li>
+                          </ul>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>

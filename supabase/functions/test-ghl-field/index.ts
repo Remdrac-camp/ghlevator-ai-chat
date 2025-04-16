@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
 const corsHeaders = {
@@ -57,7 +58,7 @@ serve(async (req) => {
         }),
         { 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400 
+          status: 200 // Using 200 instead of 400 to be handled by the frontend
         }
       );
     }
@@ -67,14 +68,20 @@ serve(async (req) => {
       console.log(`Attempting to fetch locations for company: ${jwtDetails.companyId}`);
       
       try {
+        // Fixed URL format
         const locationsResponse = await fetch(
-          `https://services.leadconnectorhq.com/companies/${jwtDetails.companyId}/locations/`, 
+          `https://services.leadconnectorhq.com/company/location/list`, 
           {
             headers: {
               'Authorization': `Bearer ${ghlApiKey}`,
               'Version': '2021-07-28',
               'Accept': 'application/json',
             },
+            method: 'POST',
+            body: JSON.stringify({
+              companyId: jwtDetails.companyId,
+              limit: 1,  // Just get the first location if available
+            })
           }
         );
 
@@ -100,16 +107,21 @@ serve(async (req) => {
       }
     }
 
+    if (!finalLocationId && jwtDetails.locationId) {
+      console.log(`Using locationId from JWT: ${jwtDetails.locationId}`);
+      finalLocationId = jwtDetails.locationId;
+    }
+
     if (!finalLocationId) {
       return new Response(
         JSON.stringify({ 
           error: 'Could not determine Location ID', 
           found: false,
-          details: 'No location ID found in JWT or via company locations' 
+          details: 'No location ID found in JWT or via company locations API' 
         }),
         { 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 404 
+          status: 200 // Using 200 instead of 400 to be handled by the frontend
         }
       );
     }
@@ -126,7 +138,7 @@ serve(async (req) => {
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500 
+        status: 200 // Using 200 instead of 500 to be handled by the frontend
       }
     );
   }
@@ -165,7 +177,8 @@ async function processGhlRequest(locationId: string, ghlApiKey: string, fieldKey
           found: false 
         }),
         { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200 // Using 200 instead of response.status to be handled by frontend
         }
       )
     }
@@ -183,6 +196,7 @@ async function processGhlRequest(locationId: string, ghlApiKey: string, fieldKey
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
         },
       )
     }

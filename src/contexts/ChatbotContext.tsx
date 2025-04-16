@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { ChatbotConfig, Objective, GoHighLevelConfig } from '../types';
+import { ChatbotConfig, Objective, GoHighLevelConfig, GhlAccount } from '../types';
 
 interface ChatbotContextType {
   chatbots: ChatbotConfig[];
   selectedChatbot: ChatbotConfig | null;
   goHighLevelConfig: GoHighLevelConfig | null;
+  ghlSubAccounts: GhlAccount[];
   createChatbot: (chatbot: Omit<ChatbotConfig, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => void;
   updateChatbot: (id: string, updates: Partial<ChatbotConfig>) => void;
   deleteChatbot: (id: string) => void;
@@ -13,6 +14,8 @@ interface ChatbotContextType {
   updateObjective: (chatbotId: string, objectiveId: string, updates: Partial<Objective>) => void;
   removeObjective: (chatbotId: string, objectiveId: string) => void;
   updateGoHighLevelConfig: (config: GoHighLevelConfig) => void;
+  linkChatbotToGhlAccount: (chatbotId: string, accountId: string | null) => void;
+  getLinkedGhlAccount: (chatbotId: string) => GhlAccount | null;
 }
 
 const ChatbotContext = createContext<ChatbotContextType | undefined>(undefined);
@@ -21,11 +24,15 @@ export const ChatbotProvider = ({ children }: { children: ReactNode }) => {
   const [chatbots, setChatbots] = useState<ChatbotConfig[]>([]);
   const [selectedChatbot, setSelectedChatbot] = useState<ChatbotConfig | null>(null);
   const [goHighLevelConfig, setGoHighLevelConfig] = useState<GoHighLevelConfig | null>(null);
+  const [ghlSubAccounts, setGhlSubAccounts] = useState<GhlAccount[]>([]);
+  const [chatbotGhlLinks, setChatbotGhlLinks] = useState<Record<string, string>>({});
 
   // Load chatbots from localStorage on init
   React.useEffect(() => {
     const savedChatbots = localStorage.getItem('chatbots');
     const savedGHLConfig = localStorage.getItem('ghlConfig');
+    const savedSubAccounts = localStorage.getItem('ghlSubAccounts');
+    const savedChatbotGhlLinks = localStorage.getItem('chatbotGhlLinks');
     
     // Migrate old GHL API key if it exists
     const oldGhlApiKey = localStorage.getItem('ghlApiKey');
@@ -59,6 +66,14 @@ export const ChatbotProvider = ({ children }: { children: ReactNode }) => {
       
       console.log('Migrated old GHL config to new structure', newConfig);
     }
+
+    if (savedSubAccounts) {
+      setGhlSubAccounts(JSON.parse(savedSubAccounts));
+    }
+
+    if (savedChatbotGhlLinks) {
+      setChatbotGhlLinks(JSON.parse(savedChatbotGhlLinks));
+    }
   }, []);
 
   // Save chatbots to localStorage whenever they change
@@ -85,6 +100,11 @@ export const ChatbotProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem('ghlIsAgencyAccount', goHighLevelConfig.isAgency ? 'true' : 'false');
     }
   }, [goHighLevelConfig]);
+
+  // Save chatbot-GHL links to localStorage whenever they change
+  React.useEffect(() => {
+    localStorage.setItem('chatbotGhlLinks', JSON.stringify(chatbotGhlLinks));
+  }, [chatbotGhlLinks]);
 
   const createChatbot = (chatbot: Omit<ChatbotConfig, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => {
     const newChatbot: ChatbotConfig = {
@@ -120,6 +140,13 @@ export const ChatbotProvider = ({ children }: { children: ReactNode }) => {
 
     if (selectedChatbot && selectedChatbot.id === id) {
       setSelectedChatbot(null);
+    }
+
+    // Remove any GHL account link for this chatbot
+    if (chatbotGhlLinks[id]) {
+      const updatedLinks = { ...chatbotGhlLinks };
+      delete updatedLinks[id];
+      setChatbotGhlLinks(updatedLinks);
     }
   };
 
@@ -164,10 +191,45 @@ export const ChatbotProvider = ({ children }: { children: ReactNode }) => {
     setGoHighLevelConfig(config);
   };
 
+  const linkChatbotToGhlAccount = (chatbotId: string, accountId: string | null) => {
+    if (accountId) {
+      setChatbotGhlLinks(prev => ({
+        ...prev,
+        [chatbotId]: accountId
+      }));
+    } else {
+      // If accountId is null, remove the link
+      const updatedLinks = { ...chatbotGhlLinks };
+      delete updatedLinks[chatbotId];
+      setChatbotGhlLinks(updatedLinks);
+    }
+  };
+
+  const getLinkedGhlAccount = (chatbotId: string): GhlAccount | null => {
+    const accountId = chatbotGhlLinks[chatbotId];
+    if (!accountId) return null;
+    
+    // Check if it's the main account
+    if (accountId === 'main' && goHighLevelConfig) {
+      return {
+        id: 'main',
+        name: 'Compte Principal',
+        apiKey: goHighLevelConfig.apiKey,
+        locationId: goHighLevelConfig.locationId,
+        companyId: goHighLevelConfig.companyId,
+        active: true
+      };
+    }
+
+    // Or if it's a sub-account
+    return ghlSubAccounts.find(account => account.id === accountId) || null;
+  };
+
   const value = {
     chatbots,
     selectedChatbot,
     goHighLevelConfig,
+    ghlSubAccounts,
     createChatbot,
     updateChatbot,
     deleteChatbot,
@@ -175,7 +237,9 @@ export const ChatbotProvider = ({ children }: { children: ReactNode }) => {
     addObjective,
     updateObjective,
     removeObjective,
-    updateGoHighLevelConfig
+    updateGoHighLevelConfig,
+    linkChatbotToGhlAccount,
+    getLinkedGhlAccount
   };
 
   return <ChatbotContext.Provider value={value}>{children}</ChatbotContext.Provider>;
