@@ -48,6 +48,7 @@ export interface GoHighLevelConfig {
   apiKey: string;
   locationId?: string;
   companyId?: string;
+  isAgency: boolean;
   mappedFields: MappedField[];
 }
 
@@ -116,4 +117,3 @@ export interface GhlAccount {
   apiKey: string;
   active: boolean;
 }
-

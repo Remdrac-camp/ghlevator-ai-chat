@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Layout from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,48 +27,55 @@ import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, Dialog
 import { Switch } from '@/components/ui/switch';
 import { GhlAccount } from '@/types';
 
-// Fonction pour extraire l'ID de location ou company à partir du JWT
-const extractGhlIds = (jwt: string): { locationId?: string; companyId?: string } => {
+// Fonction améliorée pour extraire l'ID de location ou company à partir du JWT
+const extractGhlIds = (jwt: string): { locationId?: string; companyId?: string; isValid: boolean } => {
   try {
     // Diviser le JWT en parties
     const parts = jwt.split('.');
-    if (parts.length !== 3) return {};
+    if (parts.length !== 3) return { isValid: false };
     
     // Décoder la partie payload
     const payload = JSON.parse(atob(parts[1]));
     
-    return {
+    // Vérifier la présence d'un company_id ou location_id
+    const result = {
       locationId: payload.location_id || undefined,
-      companyId: payload.company_id || undefined
+      companyId: payload.company_id || undefined,
+      isValid: !!(payload.location_id || payload.company_id)
     };
+    
+    console.log('Extracted JWT payload:', payload);
+    console.log('Extracted IDs:', result);
+    
+    return result;
   } catch (error) {
     console.error('Erreur lors du décodage du JWT:', error);
-    return {};
+    return { isValid: false };
   }
 };
 
 const Integrations = () => {
   const { toast } = useToast();
-  const [ghlApiKey, setGhlApiKey] = React.useState('');
-  const [ghlAccountName, setGhlAccountName] = React.useState('');
-  const [isAgencyMode, setIsAgencyMode] = React.useState(false);
-  const [subAccounts, setSubAccounts] = React.useState<GhlAccount[]>([]);
-  const [isDialogOpen, setIsDialogOpen] = React.useState(false);
-  const [editingAccount, setEditingAccount] = React.useState<GhlAccount | null>(null);
+  const [ghlApiKey, setGhlApiKey] = useState('');
+  const [ghlAccountName, setGhlAccountName] = useState('');
+  const [isAgencyMode, setIsAgencyMode] = useState(false);
+  const [subAccounts, setSubAccounts] = useState<GhlAccount[]>([]);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<GhlAccount | null>(null);
   const { apiKeys, updateApiKeys } = useAuth();
-  const [ghlIds, setGhlIds] = React.useState<{ locationId?: string; companyId?: string }>({});
+  const [ghlIds, setGhlIds] = useState<{ locationId?: string; companyId?: string; isValid: boolean }>({ isValid: false });
 
-  React.useEffect(() => {
+  useEffect(() => {
     // Mise à jour des IDs lorsque la clé API change
     if (ghlApiKey) {
       const extracted = extractGhlIds(ghlApiKey);
       setGhlIds(extracted);
     } else {
-      setGhlIds({});
+      setGhlIds({ isValid: false });
     }
   }, [ghlApiKey]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     // Charger les sous-comptes sauvegardés depuis localStorage s'ils existent
     const savedSubAccounts = localStorage.getItem('ghlSubAccounts');
     if (savedSubAccounts) {
@@ -78,7 +85,14 @@ const Integrations = () => {
     // Vérifier si le mode agence était activé
     const agencyMode = localStorage.getItem('ghlAgencyMode') === 'true';
     setIsAgencyMode(agencyMode);
-  }, []);
+    
+    // Si une clé API GoHighLevel existe déjà, extraire ses IDs
+    if (apiKeys.goHighLevel) {
+      const extracted = extractGhlIds(apiKeys.goHighLevel);
+      setGhlIds(extracted);
+      setGhlApiKey(apiKeys.goHighLevel);
+    }
+  }, [apiKeys.goHighLevel]);
 
   const saveSubAccounts = (accounts: GhlAccount[]) => {
     setSubAccounts(accounts);
@@ -95,7 +109,7 @@ const Integrations = () => {
       return;
     }
 
-    if (!ghlIds.locationId && !ghlIds.companyId) {
+    if (!ghlIds.isValid) {
       toast({
         title: "Clé API invalide",
         description: "La clé API fournie n'est pas valide ou ne contient pas d'ID de location ou d'agence.",
@@ -108,17 +122,23 @@ const Integrations = () => {
     updateApiKeys({ goHighLevel: ghlApiKey });
     localStorage.setItem('ghlAgencyMode', isAgencyMode.toString());
     
+    // Sauvegarder les IDs dans le localStorage avec des clés plus précises
     if (ghlIds.locationId) {
       localStorage.setItem('ghlLocationId', ghlIds.locationId);
     }
     
     if (ghlIds.companyId) {
       localStorage.setItem('ghlCompanyId', ghlIds.companyId);
+      localStorage.setItem('ghlIsAgencyAccount', 'true');
+    } else {
+      localStorage.setItem('ghlIsAgencyAccount', 'false');
     }
     
     toast({
       title: "Intégration réussie",
-      description: "Votre compte GoHighLevel a été connecté avec succès.",
+      description: ghlIds.companyId 
+        ? "Votre compte Agence GoHighLevel a été connecté avec succès." 
+        : "Votre compte GoHighLevel a été connecté avec succès.",
     });
   };
 
@@ -148,7 +168,7 @@ const Integrations = () => {
 
     const extracted = extractGhlIds(ghlApiKey);
     
-    if (!extracted.locationId && !extracted.companyId) {
+    if (!extracted.isValid) {
       toast({
         title: "Clé API invalide",
         description: "La clé API fournie n'est pas valide ou ne contient pas d'ID de location ou d'agence.",
@@ -221,6 +241,9 @@ const Integrations = () => {
     });
   };
 
+  // Détermine le type de compte GHL
+  const accountType = ghlIds.companyId ? "Compte Agence" : ghlIds.locationId ? "Compte Location" : "Non détecté";
+
   return (
     <Layout requiresAuth>
       <div className="container mx-auto max-w-5xl">
@@ -259,16 +282,17 @@ const Integrations = () => {
                 </p>
               </div>
 
-              {(ghlIds.locationId || ghlIds.companyId) && (
+              {ghlIds.isValid && (
                 <div className="rounded-lg bg-muted p-4">
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
                     <div>
                       <h3 className="font-medium">
-                        {ghlIds.companyId ? "ID d'agence détecté" : "ID de location détecté"}
+                        {accountType}
                       </h3>
                       <p className="text-sm text-muted-foreground">
-                        {ghlIds.companyId || ghlIds.locationId}
+                        {ghlIds.companyId ? `ID d'agence: ${ghlIds.companyId}` : 
+                         ghlIds.locationId ? `ID de location: ${ghlIds.locationId}` : ''}
                       </p>
                     </div>
                   </div>
@@ -442,16 +466,17 @@ const Integrations = () => {
                 </p>
               </div>
 
-              {(ghlIds.locationId || ghlIds.companyId) && (
+              {ghlIds.isValid && (
                 <div className="rounded-lg bg-muted p-4">
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
                     <div>
                       <h3 className="font-medium">
-                        {ghlIds.companyId ? "ID d'agence détecté" : "ID de location détecté"}
+                        {accountType}
                       </h3>
                       <p className="text-sm text-muted-foreground">
-                        {ghlIds.companyId || ghlIds.locationId}
+                        {ghlIds.companyId ? `ID d'agence: ${ghlIds.companyId}` : 
+                         ghlIds.locationId ? `ID de location: ${ghlIds.locationId}` : ''}
                       </p>
                     </div>
                   </div>
