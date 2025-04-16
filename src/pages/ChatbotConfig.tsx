@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useChatbot } from '@/contexts/ChatbotContext';
@@ -41,6 +40,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Objective } from '@/types';
 import { Slider } from '@/components/ui/slider';
 import { AlertCircle, Save, Target, Bot, Webhook, MessageCircle } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 const objectiveSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -54,6 +54,7 @@ const ChatbotConfig = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { chatbots, updateChatbot, addObjective, updateObjective, removeObjective } = useChatbot();
+  const { apiKeys, updateApiKeys } = useAuth();
   const [activeTab, setActiveTab] = useState('basic');
   const [newObjective, setNewObjective] = useState<Omit<Objective, 'id' | 'completed'>>({
     name: '',
@@ -62,6 +63,7 @@ const ChatbotConfig = () => {
     pattern: '',
     order: 0
   });
+  const [openaiKey, setOpenaiKey] = useState(apiKeys.openai || '');
 
   const chatbot = chatbots.find(c => c.id === id);
   
@@ -222,6 +224,34 @@ const ChatbotConfig = () => {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="openaiKey">OpenAI API Key</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="openaiKey"
+                          type="password"
+                          value={openaiKey}
+                          onChange={(e) => setOpenaiKey(e.target.value)}
+                          placeholder="sk-..."
+                          className="flex-1"
+                        />
+                        <Button 
+                          variant="outline" 
+                          onClick={() => {
+                            if (openaiKey) {
+                              updateApiKeys({ ...apiKeys, openai: openaiKey });
+                              alert('OpenAI API key saved successfully!');
+                            }
+                          }}
+                        >
+                          Save Key
+                        </Button>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Your API key is stored securely in your browser's local storage
+                      </p>
+                    </div>
+
                     <div className="space-y-2">
                       <Label htmlFor="systemPrompt">System Prompt</Label>
                       <Textarea

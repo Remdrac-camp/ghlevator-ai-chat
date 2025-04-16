@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
@@ -49,6 +48,9 @@ const Chatbots = () => {
         model: 'gpt-4o',
         temperature: 0.7,
         maxTokens: 500,
+        topP: 0.9,
+        frequencyPenalty: 0.0,
+        presencePenalty: 0.0
       }
     });
     
