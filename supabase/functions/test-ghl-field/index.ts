@@ -18,6 +18,9 @@ serve(async (req) => {
       throw new Error('Missing required parameters')
     }
 
+    console.log(`Fetching custom values for location ${locationId}`)
+    console.log(`Looking for field key: ${fieldKey}`)
+
     // Appel à l'API GoHighLevel pour récupérer les custom values
     const response = await fetch(`https://services.leadconnectorhq.com/locations/${locationId}/customValues`, {
       headers: {
@@ -28,19 +31,41 @@ serve(async (req) => {
     })
 
     if (!response.ok) {
-      throw new Error(`GHL API error: ${response.statusText}`)
+      const errorText = await response.text()
+      console.error(`GHL API error: ${response.status} ${response.statusText}`, errorText)
+      throw new Error(`GHL API error: ${response.statusText} (${response.status})`)
     }
 
     const data = await response.json()
-    console.log('GHL API response:', data)
+    console.log('GHL API response:', JSON.stringify(data))
 
-    // Recherche de la valeur correspondant à la clé
-    const customValue = data.customValues?.find((cv: any) => cv.key === fieldKey)
+    // Recherche de la valeur correspondant à la clé exacte
+    let customValue = data.customValues?.find((cv: any) => cv.key === fieldKey)
     
+    // Si on ne trouve pas avec la clé exacte, essayons de chercher par nom si fieldKey contient des espaces
+    if (!customValue && fieldKey.includes(' ')) {
+      customValue = data.customValues?.find((cv: any) => 
+        cv.name.toLowerCase() === fieldKey.toLowerCase() || 
+        cv.key.toLowerCase().includes(fieldKey.toLowerCase())
+      )
+    }
+    
+    // Si on ne trouve toujours pas, essayons avec une recherche partielle
+    if (!customValue) {
+      customValue = data.customValues?.find((cv: any) => 
+        cv.key.toLowerCase().includes(fieldKey.toLowerCase()) || 
+        (cv.name && cv.name.toLowerCase().includes(fieldKey.toLowerCase()))
+      )
+    }
+
+    // Retourner le résultat avec plus d'informations de débogage
     return new Response(
       JSON.stringify({
         value: customValue?.value || null,
-        found: !!customValue
+        key: customValue?.key || null,
+        name: customValue?.name || null,
+        found: !!customValue,
+        allKeys: data.customValues?.map((cv: any) => ({ key: cv.key, name: cv.name })) || []
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
