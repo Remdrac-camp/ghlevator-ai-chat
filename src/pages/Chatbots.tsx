@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
@@ -44,6 +45,7 @@ const Chatbots = () => {
       description: newChatbot.description,
       welcomeMessage: newChatbot.welcomeMessage,
       systemPrompt: newChatbot.systemPrompt,
+      objectives: [], // Added missing objectives property
       openaiParams: {
         model: 'gpt-4o',
         temperature: 0.7,
