@@ -21,7 +21,7 @@ serve(async (req) => {
     console.log(`Fetching custom values for location ${locationId}`)
     console.log(`Looking for field key: ${fieldKey}`)
 
-    // Appel à l'API GoHighLevel pour récupérer les custom values
+    // Call to the GHL API to retrieve custom values
     const response = await fetch(`https://services.leadconnectorhq.com/locations/${locationId}/customValues`, {
       headers: {
         'Authorization': `Bearer ${ghlApiKey}`,
@@ -39,33 +39,60 @@ serve(async (req) => {
     const data = await response.json()
     console.log('GHL API response:', JSON.stringify(data))
 
-    // Recherche de la valeur correspondant à la clé exacte
-    let customValue = data.customValues?.find((cv: any) => cv.key === fieldKey)
-    
-    // Si on ne trouve pas avec la clé exacte, essayons de chercher par nom si fieldKey contient des espaces
-    if (!customValue && fieldKey.includes(' ')) {
-      customValue = data.customValues?.find((cv: any) => 
-        cv.name.toLowerCase() === fieldKey.toLowerCase() || 
-        cv.key.toLowerCase().includes(fieldKey.toLowerCase())
-      )
+    // Prepare search terms - normalize the search input
+    const searchTerms = [
+      fieldKey.toLowerCase(),
+      fieldKey.toLowerCase().replace('api ', 'api_').replace(' api', '_api'),
+      fieldKey.toLowerCase().replace(' ', '_'),
+      `custom_values.${fieldKey.toLowerCase().replace(' ', '_')}`,
+      `{{ custom_values.${fieldKey.toLowerCase().replace(' ', '_')} }}`
+    ]
+
+    console.log('Searching for terms:', searchTerms)
+
+    // Search strategies in order of exactness
+    const strategies = [
+      // 1. Exact key match (case insensitive)
+      (cv: any) => searchTerms.some(term => cv.key.toLowerCase() === term),
+      
+      // 2. Exact name match (case insensitive)
+      (cv: any) => cv.name && searchTerms.some(term => cv.name.toLowerCase() === term),
+      
+      // 3. Key contains search term
+      (cv: any) => searchTerms.some(term => cv.key.toLowerCase().includes(term)),
+      
+      // 4. Name contains search term
+      (cv: any) => cv.name && searchTerms.some(term => cv.name.toLowerCase().includes(term))
+    ]
+
+    // Find the custom value using the strategies in order
+    let customValue = null
+    for (const strategy of strategies) {
+      customValue = data.customValues?.find(strategy)
+      if (customValue) break
     }
-    
-    // Si on ne trouve toujours pas, essayons avec une recherche partielle
-    if (!customValue) {
+
+    // Special case for "openai_key" - look explicitly for "OpenAI Key"
+    if (!customValue && fieldKey.toLowerCase().includes('openai')) {
       customValue = data.customValues?.find((cv: any) => 
-        cv.key.toLowerCase().includes(fieldKey.toLowerCase()) || 
-        (cv.name && cv.name.toLowerCase().includes(fieldKey.toLowerCase()))
+        cv.name?.toLowerCase().includes('openai') || 
+        cv.key.toLowerCase().includes('openai')
       )
     }
 
-    // Retourner le résultat avec plus d'informations de débogage
+    // Return result with enhanced debugging information
     return new Response(
       JSON.stringify({
         value: customValue?.value || null,
         key: customValue?.key || null,
         name: customValue?.name || null,
         found: !!customValue,
-        allKeys: data.customValues?.map((cv: any) => ({ key: cv.key, name: cv.name })) || []
+        searchTerms: searchTerms,
+        allKeys: data.customValues?.map((cv: any) => ({ 
+          key: cv.key, 
+          name: cv.name,
+          valuePreview: cv.value ? (cv.value.length > 20 ? cv.value.substring(0, 20) + '...' : cv.value) : null
+        })) || []
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -13,8 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useToast } from '@/components/ui/use-toast';
-import { AlertCircle, TestTube } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { AlertCircle, TestTube, Info } from 'lucide-react';
 import { 
   Dialog,
   DialogContent,
@@ -45,6 +45,15 @@ const CHATBOT_PARAMETERS = [
   { value: 'temperature', label: 'Temperature' },
   { value: 'max_tokens', label: 'Max Tokens' },
 ];
+
+// Helper function to format GHL keys
+const formatGhlKey = (key: string): string => {
+  // If the key doesn't look like a custom_values format, convert it to one
+  if (!key.includes('custom_values.') && !key.includes('{{')) {
+    return `{{ custom_values.${key.toLowerCase().replace(/\s+/g, '_')} }}`;
+  }
+  return key;
+};
 
 export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId }) => {
   const { toast } = useToast();
@@ -81,9 +90,15 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
       ghl_field_key: string;
       chatbot_parameter: string;
     }) => {
+      // Format the GHL key correctly
+      const formattedMapping = {
+        ...mapping,
+        ghl_field_key: formatGhlKey(mapping.ghl_field_key)
+      };
+      
       const { data, error } = await supabase
         .from('ghl_field_mappings')
-        .insert([mapping])
+        .insert([formattedMapping])
         .select()
         .single();
 
@@ -138,51 +153,72 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
 
   const testGhlValueMutation = useMutation({
     mutationFn: async (ghlFieldKey: string) => {
-      const { data: mapping } = await supabase
+      const { data: mappings } = await supabase
         .from('ghl_field_mappings')
         .select('*')
-        .eq('chatbot_id', chatbotId)
-        .eq('ghl_field_key', ghlFieldKey)
-        .single();
+        .eq('chatbot_id', chatbotId);
 
+      if (!mappings || mappings.length === 0) {
+        throw new Error('No mappings found for this chatbot');
+      }
+
+      // Find the specific mapping for this key
+      const mapping = mappings.find(m => m.ghl_field_key === ghlFieldKey);
       if (!mapping) {
         throw new Error('Mapping not found');
       }
 
-      if (!mapping.location_id) {
-        throw new Error('Location ID non configuré pour ce mapping');
+      // Get the locationId from localStorage - this is set in Integrations.tsx
+      const locationId = localStorage.getItem('ghlLocationId');
+      if (!locationId) {
+        throw new Error('Location ID not found in local storage');
       }
 
-      // Récupérer le paramètre actuel que nous testons
-      const parameterLabel = CHATBOT_PARAMETERS.find(p => p.value === mapping.chatbot_parameter)?.label || mapping.chatbot_parameter;
+      // Get the parameter label that we're testing
+      const parameterInfo = CHATBOT_PARAMETERS.find(p => p.value === mapping.chatbot_parameter);
+      const parameterLabel = parameterInfo?.label || mapping.chatbot_parameter;
       
+      // Extract the field name from the custom_values format if possible
+      let searchKey = ghlFieldKey;
+      if (searchKey.includes('custom_values.')) {
+        searchKey = searchKey.split('custom_values.')[1].replace('}}', '').trim();
+      }
+      // Or use the parameter name if we're searching for OpenAI Key
+      if (mapping.chatbot_parameter === 'openai_key') {
+        searchKey = 'OpenAI Key';
+      }
+      
+      console.log(`Testing GHL field: ${searchKey} for parameter: ${parameterLabel}`);
+      
+      // Call the test function
       const { data, error } = await supabase.functions.invoke('test-ghl-field', {
         body: {
-          locationId: mapping.location_id,
-          ghlApiKey: mapping.location_id ? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJsb2NhdGlvbl9pZCI6IkdHSnozZFBvZ2t5ZnF4NDM3d01IIiwidmVyc2lvbiI6MSwiaWF0IjoxNzQzNTg0MTUwMzYxLCJzdWIiOiJDbkxiTWZ0OVpydzRacllzNlB3ayJ9.07VgsMsZs2C0-oyiqlyfxm4PmSZcdcsDdvYHe4plKHc" : '',
-          fieldKey: parameterLabel
+          locationId: locationId,
+          ghlApiKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJsb2NhdGlvbl9pZCI6IkdHSnozZFBvZ2t5ZnF4NDM3d01IIiwidmVyc2lvbiI6MSwiaWF0IjoxNzQzNTg0MTUwMzYxLCJzdWIiOiJDbkxiTWZ0OVpydzRacllzNlB3ayJ9.07VgsMsZs2C0-oyiqlyfxm4PmSZcdcsDdvYHe4plKHc",
+          fieldKey: searchKey
         }
       });
 
       if (error) throw error;
       
-      // Sauvegarder les données de débogage complètes
+      // Save full debug data
       setDebugData(data);
       
       return { 
         ...data, 
         mappingType: mapping.field_type,
         fieldKey: ghlFieldKey,
-        parameterLabel: parameterLabel
+        parameterLabel: parameterLabel,
+        searchKey: searchKey
       };
     },
     onSuccess: (data) => {
-      // Afficher le toast avec des informations plus détaillées
+      // Show a more detailed toast message
       toast({
         title: data.found ? `Valeur trouvée pour "${data.parameterLabel}"` : `Valeur non trouvée pour "${data.parameterLabel}"`,
         description: data.found 
-          ? `Valeur: ${data.value} (Clé GHL: ${data.key})` 
-          : "Aucune valeur correspondante trouvée dans GHL. Cliquez sur 'Afficher les détails' pour plus d'informations.",
+          ? `Valeur: ${data.value && data.value.length > 30 ? `${data.value.substring(0, 30)}...` : data.value} (${data.name || data.key})` 
+          : `Recherche pour "${data.searchKey}" n'a pas trouvé de correspondance. Cliquez sur 'Afficher les détails' pour voir toutes les clés disponibles.`,
         variant: data.found ? "default" : "destructive",
         action: (
           <Button variant="outline" size="sm" onClick={() => setShowDebugDialog(true)}>
@@ -257,11 +293,16 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
 
             <div className="space-y-2">
               <Label>Clé GHL</Label>
-              <Input 
-                placeholder="Ex: openai_key"
-                value={newMapping.ghl_field_key || ''}
-                onChange={(e) => setNewMapping({ ...newMapping, ghl_field_key: e.target.value })}
-              />
+              <div className="space-y-1">
+                <Input 
+                  placeholder="Ex: openai_key ou {{ custom_values.openai_key }}"
+                  value={newMapping.ghl_field_key || ''}
+                  onChange={(e) => setNewMapping({ ...newMapping, ghl_field_key: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Pour OpenAI API Key, utilisez simplement "OpenAI Key" ou "openai_key"
+                </p>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -359,20 +400,40 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
                         <p><span className="font-semibold">Valeur:</span> {debugData.value}</p>
                       </div>
                     ) : (
-                      <p className="text-yellow-500">Aucune valeur correspondante trouvée</p>
+                      <div className="space-y-2">
+                        <p className="text-yellow-500">Aucune valeur correspondante trouvée</p>
+                        <p><span className="font-semibold">Termes recherchés:</span></p>
+                        <ul className="list-disc pl-5 text-xs space-y-1">
+                          {debugData.searchTerms?.map((term: string, index: number) => (
+                            <li key={index}>{term}</li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                   </div>
                 </div>
 
                 <div>
-                  <h3 className="font-medium mb-2">Toutes les clés disponibles dans GHL</h3>
+                  <h3 className="font-medium mb-2 flex items-center">
+                    <span>Toutes les clés disponibles dans GHL</span>
+                    <div className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                      {debugData.allKeys?.length || 0} clés
+                    </div>
+                  </h3>
                   <div className="bg-muted p-3 rounded-md max-h-60 overflow-y-auto">
                     {debugData.allKeys?.length > 0 ? (
                       <ul className="space-y-2">
                         {debugData.allKeys.map((item: any, index: number) => (
                           <li key={index} className="border-b border-border pb-1">
-                            <span className="font-semibold">Clé:</span> {item.key}
-                            {item.name && <span className="ml-2">(<span className="font-semibold">Nom:</span> {item.name})</span>}
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="font-semibold">Clé:</span> {item.key}
+                                {item.name && <span className="ml-2">(<span className="font-semibold">Nom:</span> {item.name})</span>}
+                              </div>
+                              {item.valuePreview && (
+                                <span className="text-xs text-gray-500">{item.valuePreview}</span>
+                              )}
+                            </div>
                           </li>
                         ))}
                       </ul>
