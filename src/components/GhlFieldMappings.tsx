@@ -139,26 +139,27 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
       }
 
       if (!mapping.location_id) {
-        throw new Error('Location ID not found for this mapping');
+        throw new Error('Location ID non configuré pour ce mapping');
       }
 
       const { data, error } = await supabase.functions.invoke('test-ghl-field', {
         body: {
           locationId: mapping.location_id,
-          ghlApiKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJsb2NhdGlvbl9pZCI6IkdHSnozZFBvZ2t5ZnF4NDM3d01IIiwidmVyc2lvbiI6MSwiaWF0IjoxNzQzNTg0MTUwMzYxLCJzdWIiOiJDbkxiTWZ0OVpydzRacllzNlB3ayJ9.07VgsMsZs2C0-oyiqlyfxm4PmSZcdcsDdvYHe4plKHc",
-          fieldKey: ghlFieldKey
+          ghlApiKey: mapping.location_id ? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJsb2NhdGlvbl9pZCI6IkdHSnozZFBvZ2t5ZnF4NDM3d01IIiwidmVyc2lvbiI6MSwiaWF0IjoxNzQzNTg0MTUwMzYxLCJzdWIiOiJDbkxiTWZ0OVpydzRacllzNlB3ayJ9.07VgsMsZs2C0-oyiqlyfxm4PmSZcdcsDdvYHe4plKHc" : '',
+          fieldKey: 'OpenAI API Key'
         }
       });
 
       if (error) throw error;
-      return data;
+      return { ...data, mappingType: mapping.field_type };
     },
     onSuccess: (data) => {
       toast({
-        title: data.found ? "Test Réussi" : "Champ non trouvé",
+        title: data.found ? "Clé OpenAI trouvée" : "Clé non trouvée",
         description: data.found 
-          ? `Valeur récupérée: ${data.value}` 
-          : "Aucune valeur trouvée pour cette clé dans GHL",
+          ? `Valeur récupérée pour ${data.mappingType}: ${data.value}` 
+          : "Aucune valeur trouvée pour 'OpenAI API Key' dans GHL",
+        variant: data.found ? "default" : "destructive"
       });
     },
     onError: (error) => {
