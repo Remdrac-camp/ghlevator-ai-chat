@@ -102,8 +102,13 @@ const ChatbotConfig = () => {
     },
   });
 
-  const allGhlAccounts: Array<GhlAccount | {id: 'main', name: string}> = [
-    ...(goHighLevelConfig ? [{ id: 'main', name: 'Compte Principal GHL' }] : []),
+  const allGhlAccounts: Array<GhlAccount | { id: 'main', name: string, apiKey: string, active: boolean }> = [
+    ...(goHighLevelConfig ? [{
+      id: 'main',
+      name: 'Compte Principal GHL',
+      apiKey: goHighLevelConfig.apiKey,
+      active: true
+    }] : []),
     ...ghlSubAccounts.filter(account => account.active)
   ];
   
