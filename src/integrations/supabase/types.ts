@@ -9,7 +9,42 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      ghl_field_mappings: {
+        Row: {
+          chatbot_id: string
+          chatbot_parameter: string
+          company_id: string | null
+          created_at: string | null
+          field_type: string
+          ghl_field_key: string
+          id: string
+          location_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          chatbot_id: string
+          chatbot_parameter: string
+          company_id?: string | null
+          created_at?: string | null
+          field_type: string
+          ghl_field_key: string
+          id?: string
+          location_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          chatbot_id?: string
+          chatbot_parameter?: string
+          company_id?: string | null
+          created_at?: string | null
+          field_type?: string
+          ghl_field_key?: string
+          id?: string
+          location_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

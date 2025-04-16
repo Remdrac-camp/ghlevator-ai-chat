@@ -41,6 +41,7 @@ import { Objective } from '@/types';
 import { Slider } from '@/components/ui/slider';
 import { AlertCircle, Save, Target, Bot, Webhook, MessageCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { GhlFieldMappings } from '@/components/GhlFieldMappings';
 
 const objectiveSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -157,7 +158,7 @@ const ChatbotConfig = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid grid-cols-4 mb-8">
+          <TabsList className="grid grid-cols-5 mb-8">
             <TabsTrigger value="basic" className="flex items-center">
               <Bot className="mr-2 h-4 w-4" />
               Basic Settings
@@ -173,6 +174,10 @@ const ChatbotConfig = () => {
             <TabsTrigger value="webhook" className="flex items-center">
               <Webhook className="mr-2 h-4 w-4" />
               Webhook
+            </TabsTrigger>
+            <TabsTrigger value="ghl" className="flex items-center">
+              <Bot className="mr-2 h-4 w-4" />
+              GHL Mappings
             </TabsTrigger>
           </TabsList>
 
@@ -494,6 +499,10 @@ const ChatbotConfig = () => {
                     </div>
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              <TabsContent value="ghl">
+                <GhlFieldMappings chatbotId={id || ''} />
               </TabsContent>
 
               <div className="mt-6">
