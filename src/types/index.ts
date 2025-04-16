@@ -46,7 +46,8 @@ export interface OpenAiParams {
 // GoHighLevel integration
 export interface GoHighLevelConfig {
   apiKey: string;
-  locationId: string;
+  locationId?: string;
+  companyId?: string;
   mappedFields: MappedField[];
 }
 
@@ -105,3 +106,14 @@ export interface WebhookResponse {
   objectives: Record<string, boolean>;
   extractedData: Record<string, any>;
 }
+
+// GoHighLevel Account Types
+export interface GhlAccount {
+  id: string;
+  name: string;
+  locationId?: string;
+  companyId?: string;
+  apiKey: string;
+  active: boolean;
+}
+
