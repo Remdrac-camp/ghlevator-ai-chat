@@ -185,12 +185,54 @@ const Dashboard = () => {
               <p className="text-muted-foreground text-center mb-4 max-w-md">
                 Create your first chatbot to start engaging with your customers through GoHighLevel
               </p>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Your First Chatbot
-                </Button>
-              </DialogTrigger>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create Your First Chatbot
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create New Chatbot</DialogTitle>
+                    <DialogDescription>
+                      Set up a new chatbot to integrate with GoHighLevel
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="name-new">Name</Label>
+                      <Input
+                        id="name-new"
+                        placeholder="Customer Support Bot"
+                        value={newChatbotName}
+                        onChange={(e) => setNewChatbotName(e.target.value)}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="description-new">Description</Label>
+                      <Textarea
+                        id="description-new"
+                        placeholder="A bot that helps customers with their inquiries"
+                        value={newChatbotDescription}
+                        onChange={(e) => setNewChatbotDescription(e.target.value)}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="welcome-new">Welcome Message</Label>
+                      <Textarea
+                        id="welcome-new"
+                        placeholder="Hello! How can I help you today?"
+                        value={welcomeMessage}
+                        onChange={(e) => setWelcomeMessage(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button onClick={handleCreateChatbot}>Create</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </CardContent>
           </Card>
         ) : (
