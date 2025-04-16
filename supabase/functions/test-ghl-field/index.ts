@@ -39,14 +39,39 @@ serve(async (req) => {
     const data = await response.json()
     console.log('GHL API response:', JSON.stringify(data))
 
-    // Prepare search terms - normalize the search input
+    // Additional search terms for welcome message
+    const welcomeTerms = [
+      'welcome_message',
+      'welcome message',
+      'intro_message',
+      'intro message',
+      'introduction_message',
+      'introduction message',
+      'greeting',
+      'bienvenue',
+      'message_accueil',
+      'message accueil'
+    ]
+    
+    // Original normalized search terms
     const searchTerms = [
       fieldKey.toLowerCase(),
       fieldKey.toLowerCase().replace('api ', 'api_').replace(' api', '_api'),
-      fieldKey.toLowerCase().replace(' ', '_'),
-      `custom_values.${fieldKey.toLowerCase().replace(' ', '_')}`,
-      `{{ custom_values.${fieldKey.toLowerCase().replace(' ', '_')} }}`
+      fieldKey.toLowerCase().replace(/ /g, '_'),
+      `custom_values.${fieldKey.toLowerCase().replace(/ /g, '_')}`,
+      `{{ custom_values.${fieldKey.toLowerCase().replace(/ /g, '_')} }}`
     ]
+
+    // Add welcome-specific terms if we're looking for welcome message
+    if (fieldKey.toLowerCase().includes('welcome') || fieldKey.toLowerCase().includes('message')) {
+      welcomeTerms.forEach(term => {
+        if (!searchTerms.includes(term)) {
+          searchTerms.push(term)
+          searchTerms.push(`custom_values.${term}`)
+          searchTerms.push(`{{ custom_values.${term} }}`)
+        }
+      })
+    }
 
     console.log('Searching for terms:', searchTerms)
 
@@ -80,6 +105,32 @@ serve(async (req) => {
       )
     }
 
+    // Special case for welcome message - broader search
+    if (!customValue && (fieldKey.toLowerCase().includes('welcome') || fieldKey.toLowerCase().includes('message'))) {
+      customValue = data.customValues?.find((cv: any) => 
+        welcomeTerms.some(term => 
+          cv.key.toLowerCase().includes(term) || 
+          (cv.name && cv.name.toLowerCase().includes(term))
+        )
+      )
+    }
+    
+    // Find all potential matches for welcome messages for diagnostics
+    const potentialWelcomeMatches = data.customValues?.filter((cv: any) => 
+      welcomeTerms.some(term => 
+        cv.key.toLowerCase().includes(term) || 
+        (cv.name && cv.name.toLowerCase().includes(term))
+      )
+    ) || []
+
+    // Collect values with potential text content (for welcome message search)
+    const textContentFields = data.customValues?.filter((cv: any) => 
+      cv.value && 
+      typeof cv.value === 'string' && 
+      cv.value.length > 15 && 
+      cv.value.length < 500
+    ) || []
+
     // Return result with enhanced debugging information
     return new Response(
       JSON.stringify({
@@ -88,6 +139,16 @@ serve(async (req) => {
         name: customValue?.name || null,
         found: !!customValue,
         searchTerms: searchTerms,
+        potentialWelcomeMatches: potentialWelcomeMatches.map((cv: any) => ({
+          key: cv.key,
+          name: cv.name,
+          valuePreview: cv.value ? (cv.value.length > 50 ? cv.value.substring(0, 50) + '...' : cv.value) : null
+        })),
+        textContentFields: textContentFields.map((cv: any) => ({
+          key: cv.key,
+          name: cv.name,
+          valuePreview: cv.value ? (cv.value.length > 50 ? cv.value.substring(0, 50) + '...' : cv.value) : null
+        })),
         allKeys: data.customValues?.map((cv: any) => ({ 
           key: cv.key, 
           name: cv.name,

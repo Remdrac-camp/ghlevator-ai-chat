@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { AlertCircle, TestTube, Info } from 'lucide-react';
+import { AlertCircle, TestTube, Info, Search, MessageCircle } from 'lucide-react';
 import { 
   Dialog,
   DialogContent,
@@ -23,6 +23,12 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
 
 interface GhlFieldMapping {
   id: string;
@@ -59,6 +65,7 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
   const { toast } = useToast();
   const [showDebugDialog, setShowDebugDialog] = React.useState(false);
   const [debugData, setDebugData] = React.useState<any>(null);
+  const [showWelcomeMessagePreview, setShowWelcomeMessagePreview] = React.useState(false);
   const [newMapping, setNewMapping] = React.useState<{
     chatbot_id: string;
     field_type: 'custom_value' | 'custom_field';
@@ -186,6 +193,9 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
       // Or use the parameter name if we're searching for OpenAI Key
       if (mapping.chatbot_parameter === 'openai_key') {
         searchKey = 'OpenAI Key';
+      } else if (mapping.chatbot_parameter === 'welcome_message') {
+        // For welcome message, we'll try several different terms
+        searchKey = 'welcome_message';
       }
       
       console.log(`Testing GHL field: ${searchKey} for parameter: ${parameterLabel}`);
@@ -203,6 +213,11 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
       
       // Save full debug data
       setDebugData(data);
+
+      // For welcome message testing, let's show a special dialog
+      if (mapping.chatbot_parameter === 'welcome_message' && data.potentialWelcomeMatches?.length > 0) {
+        setShowWelcomeMessagePreview(true);
+      }
       
       return { 
         ...data, 
@@ -263,6 +278,50 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
 
   const handleTestMapping = (ghlFieldKey: string) => {
     testGhlValueMutation.mutate(ghlFieldKey);
+  };
+
+  const findWelcomeMessages = async () => {
+    // Get the locationId from localStorage - this is set in Integrations.tsx
+    const locationId = localStorage.getItem('ghlLocationId');
+    if (!locationId) {
+      toast({
+        title: "Erreur",
+        description: "Location ID not found in local storage",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Call the test function with a special search key for welcome messages
+    const { data, error } = await supabase.functions.invoke('test-ghl-field', {
+      body: {
+        locationId: locationId,
+        ghlApiKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJsb2NhdGlvbl9pZCI6IkdHSnozZFBvZ2t5ZnF4NDM3d01IIiwidmVyc2lvbiI6MSwiaWF0IjoxNzQzNTg0MTUwMzYxLCJzdWIiOiJDbkxiTWZ0OVpydzRacllzNlB3ayJ9.07VgsMsZs2C0-oyiqlyfxm4PmSZcdcsDdvYHe4plKHc",
+        fieldKey: "welcome_message"
+      }
+    });
+
+    if (error) {
+      toast({
+        title: "Erreur",
+        description: `Erreur lors de la recherche des messages d'accueil: ${error.message}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setDebugData(data);
+    setShowWelcomeMessagePreview(true);
+    
+    toast({
+      title: "Recherche terminée",
+      description: `${data.potentialWelcomeMatches?.length || 0} messages d'accueil potentiels trouvés.`,
+      action: (
+        <Button variant="outline" size="sm" onClick={() => setShowWelcomeMessagePreview(true)}>
+          Voir les résultats
+        </Button>
+      )
+    });
   };
 
   return (
@@ -326,9 +385,19 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
               </Select>
             </div>
 
-            <Button onClick={handleAddMapping} disabled={addMappingMutation.isPending}>
-              Ajouter le mapping
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={handleAddMapping} disabled={addMappingMutation.isPending} className="flex-1">
+                Ajouter le mapping
+              </Button>
+              <Button 
+                variant="secondary" 
+                onClick={findWelcomeMessages}
+                disabled={testGhlValueMutation.isPending}
+              >
+                <Search className="h-4 w-4 mr-1" />
+                Rechercher Welcome Messages
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-4">
@@ -375,6 +444,7 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
         </CardContent>
       </Card>
 
+      {/* Debug dialog */}
       <Dialog open={showDebugDialog} onOpenChange={setShowDebugDialog}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-auto">
           <DialogHeader>
@@ -413,6 +483,93 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
                   </div>
                 </div>
 
+                {debugData.potentialWelcomeMatches && debugData.potentialWelcomeMatches.length > 0 && (
+                  <div>
+                    <h3 className="font-medium mb-2 flex items-center">
+                      <MessageCircle className="h-4 w-4 mr-1" />
+                      <span>Messages d'accueil potentiels</span>
+                    </h3>
+                    <div className="bg-muted p-3 rounded-md">
+                      <Accordion type="single" collapsible className="w-full">
+                        {debugData.potentialWelcomeMatches.map((item: any, index: number) => (
+                          <AccordionItem key={index} value={`welcome-${index}`}>
+                            <AccordionTrigger>
+                              <div className="text-left">
+                                <div className="font-medium">{item.name || item.key}</div>
+                                <div className="text-xs text-muted-foreground">{item.key}</div>
+                              </div>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                              <div className="p-3 bg-background rounded border">
+                                {item.valuePreview}
+                              </div>
+                              <div className="flex justify-end mt-2">
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => {
+                                    setNewMapping({
+                                      ...newMapping,
+                                      ghl_field_key: item.key,
+                                      chatbot_parameter: 'welcome_message'
+                                    });
+                                    setShowDebugDialog(false);
+                                  }}
+                                >
+                                  Utiliser cette valeur
+                                </Button>
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
+                        ))}
+                      </Accordion>
+                    </div>
+                  </div>
+                )}
+
+                {debugData.textContentFields && debugData.textContentFields.length > 0 && (
+                  <div>
+                    <h3 className="font-medium mb-2 flex items-center">
+                      <span>Champs avec contenu textuel (candidats possibles pour message d'accueil)</span>
+                    </h3>
+                    <div className="bg-muted p-3 rounded-md max-h-60 overflow-y-auto">
+                      <Accordion type="single" collapsible className="w-full">
+                        {debugData.textContentFields.map((item: any, index: number) => (
+                          <AccordionItem key={index} value={`text-${index}`}>
+                            <AccordionTrigger>
+                              <div className="text-left">
+                                <div className="font-medium">{item.name || item.key}</div>
+                                <div className="text-xs text-muted-foreground">{item.key}</div>
+                              </div>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                              <div className="p-3 bg-background rounded border">
+                                {item.valuePreview}
+                              </div>
+                              <div className="flex justify-end mt-2">
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => {
+                                    setNewMapping({
+                                      ...newMapping,
+                                      ghl_field_key: item.key,
+                                      chatbot_parameter: 'welcome_message'
+                                    });
+                                    setShowDebugDialog(false);
+                                  }}
+                                >
+                                  Utiliser cette valeur
+                                </Button>
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
+                        ))}
+                      </Accordion>
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <h3 className="font-medium mb-2 flex items-center">
                     <span>Toutes les clés disponibles dans GHL</span>
@@ -430,9 +587,24 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
                                 <span className="font-semibold">Clé:</span> {item.key}
                                 {item.name && <span className="ml-2">(<span className="font-semibold">Nom:</span> {item.name})</span>}
                               </div>
-                              {item.valuePreview && (
-                                <span className="text-xs text-gray-500">{item.valuePreview}</span>
-                              )}
+                              <div className="flex items-center gap-2">
+                                {item.valuePreview && (
+                                  <span className="text-xs text-gray-500">{item.valuePreview}</span>
+                                )}
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  onClick={() => {
+                                    setNewMapping({
+                                      ...newMapping,
+                                      ghl_field_key: item.key
+                                    });
+                                    setShowDebugDialog(false);
+                                  }}
+                                >
+                                  Utiliser
+                                </Button>
+                              </div>
                             </div>
                           </li>
                         ))}
@@ -454,6 +626,127 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDebugDialog(false)}>
+              Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Welcome Message Preview Dialog */}
+      <Dialog open={showWelcomeMessagePreview} onOpenChange={setShowWelcomeMessagePreview}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageCircle className="h-5 w-5 text-blue-500" />
+              Messages d'accueil disponibles
+            </DialogTitle>
+            <DialogDescription>
+              Ces champs GHL pourraient contenir des messages d'accueil pour votre chatbot
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {debugData?.potentialWelcomeMatches && debugData.potentialWelcomeMatches.length > 0 ? (
+              <div className="space-y-4">
+                <Accordion type="single" collapsible className="w-full">
+                  {debugData.potentialWelcomeMatches.map((item: any, index: number) => (
+                    <AccordionItem key={index} value={`welcome-preview-${index}`}>
+                      <AccordionTrigger>
+                        <div className="text-left">
+                          <div className="font-medium">{item.name || item.key}</div>
+                          <div className="text-xs text-muted-foreground">{item.key}</div>
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="p-4 bg-muted rounded-md">
+                          <p>{item.valuePreview}</p>
+                        </div>
+                        
+                        <div className="flex justify-end mt-3 gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              navigator.clipboard.writeText(item.key);
+                              toast({
+                                title: "Clé copiée",
+                                description: `La clé "${item.key}" a été copiée dans le presse-papiers.`
+                              });
+                            }}
+                          >
+                            Copier la clé
+                          </Button>
+                          <Button 
+                            size="sm"
+                            onClick={() => {
+                              setNewMapping({
+                                ...newMapping,
+                                ghl_field_key: item.key,
+                                chatbot_parameter: 'welcome_message'
+                              });
+                              setShowWelcomeMessagePreview(false);
+                              toast({
+                                title: "Valeur sélectionnée",
+                                description: `"${item.key}" est maintenant prêt à être mappé comme message d'accueil.`
+                              });
+                            }}
+                          >
+                            Utiliser comme Welcome Message
+                          </Button>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
+              </div>
+            ) : (
+              <div className="text-center py-6">
+                <p>Aucun message d'accueil potentiel trouvé</p>
+                
+                {debugData?.textContentFields && debugData.textContentFields.length > 0 && (
+                  <div className="mt-6">
+                    <p className="font-medium mb-3">Autres champs avec contenu textuel</p>
+                    <Accordion type="single" collapsible className="w-full">
+                      {debugData.textContentFields.map((item: any, index: number) => (
+                        <AccordionItem key={index} value={`text-content-${index}`}>
+                          <AccordionTrigger>
+                            <div className="text-left">
+                              <div className="font-medium">{item.name || item.key}</div>
+                              <div className="text-xs text-muted-foreground">{item.key}</div>
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent>
+                            <div className="p-4 bg-muted rounded-md">
+                              <p>{item.valuePreview}</p>
+                            </div>
+                            
+                            <div className="flex justify-end mt-3">
+                              <Button 
+                                size="sm"
+                                onClick={() => {
+                                  setNewMapping({
+                                    ...newMapping,
+                                    ghl_field_key: item.key,
+                                    chatbot_parameter: 'welcome_message'
+                                  });
+                                  setShowWelcomeMessagePreview(false);
+                                }}
+                              >
+                                Utiliser comme Welcome Message
+                              </Button>
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      ))}
+                    </Accordion>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowWelcomeMessagePreview(false)}>
               Fermer
             </Button>
           </DialogFooter>
