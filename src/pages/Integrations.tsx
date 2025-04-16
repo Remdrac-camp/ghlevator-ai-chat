@@ -14,7 +14,6 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import {
   Globe2,
-  Webhook,
   KeyRound,
   ArrowRight,
   CheckCircle2,
@@ -30,34 +29,56 @@ import { Switch } from '@/components/ui/switch';
 interface GhlSubAccount {
   id: string;
   name: string;
-  subdomain: string;
+  locationId: string;
   apiKey: string;
   active: boolean;
 }
 
+// Fonction pour extraire l'ID de location à partir du JWT
+const extractLocationId = (jwt: string): string | null => {
+  try {
+    // Diviser le JWT en parties
+    const parts = jwt.split('.');
+    if (parts.length !== 3) return null;
+    
+    // Décoder la partie payload
+    const payload = JSON.parse(atob(parts[1]));
+    return payload.location_id || null;
+  } catch (error) {
+    console.error('Erreur lors du décodage du JWT:', error);
+    return null;
+  }
+};
+
 const Integrations = () => {
   const { toast } = useToast();
   const [ghlApiKey, setGhlApiKey] = React.useState('');
-  const [ghlSubdomain, setGhlSubdomain] = React.useState('');
   const [ghlAccountName, setGhlAccountName] = React.useState('');
-  const [webhookEndpoint, setWebhookEndpoint] = React.useState('');
   const [isAgencyMode, setIsAgencyMode] = React.useState(false);
   const [subAccounts, setSubAccounts] = React.useState<GhlSubAccount[]>([]);
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
   const [editingAccount, setEditingAccount] = React.useState<GhlSubAccount | null>(null);
   const { apiKeys, updateApiKeys } = useAuth();
+  const [locationId, setLocationId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    // Set the webhook endpoint based on the current domain
-    setWebhookEndpoint(`${window.location.origin}/api/ghl/webhook`);
-    
-    // Load saved sub-accounts from localStorage if they exist
+    // Mise à jour du locationId lorsque la clé API change
+    if (ghlApiKey) {
+      const extractedId = extractLocationId(ghlApiKey);
+      setLocationId(extractedId);
+    } else {
+      setLocationId(null);
+    }
+  }, [ghlApiKey]);
+
+  React.useEffect(() => {
+    // Charger les sous-comptes sauvegardés depuis localStorage s'ils existent
     const savedSubAccounts = localStorage.getItem('ghlSubAccounts');
     if (savedSubAccounts) {
       setSubAccounts(JSON.parse(savedSubAccounts));
     }
 
-    // Check if agency mode was enabled
+    // Vérifier si le mode agence était activé
     const agencyMode = localStorage.getItem('ghlAgencyMode') === 'true';
     setIsAgencyMode(agencyMode);
   }, []);
@@ -68,19 +89,28 @@ const Integrations = () => {
   };
 
   const handleConnect = () => {
-    if (!ghlApiKey || !ghlSubdomain) {
+    if (!ghlApiKey) {
       toast({
         title: "Information manquante",
-        description: "Veuillez fournir votre clé API GoHighLevel et votre sous-domaine.",
+        description: "Veuillez fournir votre clé API GoHighLevel.",
         variant: "destructive",
       });
       return;
     }
 
-    // Save the main agency connection
+    if (!locationId) {
+      toast({
+        title: "Clé API invalide",
+        description: "La clé API fournie n'est pas valide ou ne contient pas d'ID de location.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Sauvegarder la connexion principale de l'agence
     updateApiKeys({ goHighLevel: ghlApiKey });
     localStorage.setItem('ghlAgencyMode', isAgencyMode.toString());
-    localStorage.setItem('ghlMainSubdomain', ghlSubdomain);
+    localStorage.setItem('ghlLocationId', locationId);
     
     toast({
       title: "Intégration réussie",
@@ -90,19 +120,20 @@ const Integrations = () => {
 
   const openAddSubAccountDialog = () => {
     setEditingAccount(null);
+    setGhlAccountName('');
+    setGhlApiKey('');
     setIsDialogOpen(true);
   };
 
   const openEditSubAccountDialog = (account: GhlSubAccount) => {
     setEditingAccount(account);
     setGhlAccountName(account.name);
-    setGhlSubdomain(account.subdomain);
     setGhlApiKey(account.apiKey);
     setIsDialogOpen(true);
   };
 
   const handleSaveSubAccount = () => {
-    if (!ghlAccountName || !ghlSubdomain || !ghlApiKey) {
+    if (!ghlAccountName || !ghlApiKey) {
       toast({
         title: "Information manquante",
         description: "Veuillez remplir tous les champs pour le sous-compte.",
@@ -111,34 +142,43 @@ const Integrations = () => {
       return;
     }
 
+    const extractedId = extractLocationId(ghlApiKey);
+    if (!extractedId) {
+      toast({
+        title: "Clé API invalide",
+        description: "La clé API fournie n'est pas valide ou ne contient pas d'ID de location.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (editingAccount) {
-      // Update existing subaccount
+      // Mettre à jour le sous-compte existant
       const updatedAccounts = subAccounts.map(account => 
         account.id === editingAccount.id 
           ? { 
               ...account, 
-              name: ghlAccountName, 
-              subdomain: ghlSubdomain, 
-              apiKey: ghlApiKey
+              name: ghlAccountName,
+              apiKey: ghlApiKey,
+              locationId: extractedId
             } 
           : account
       );
       saveSubAccounts(updatedAccounts);
     } else {
-      // Add new subaccount
+      // Ajouter un nouveau sous-compte
       const newAccount: GhlSubAccount = {
         id: `account-${Date.now()}`,
         name: ghlAccountName,
-        subdomain: ghlSubdomain,
         apiKey: ghlApiKey,
+        locationId: extractedId,
         active: true
       };
       saveSubAccounts([...subAccounts, newAccount]);
     }
 
-    // Clear the form
+    // Effacer le formulaire
     setGhlAccountName('');
-    setGhlSubdomain('');
     setGhlApiKey('');
     setIsDialogOpen(false);
 
@@ -199,31 +239,32 @@ const Integrations = () => {
           <CardContent className="space-y-6">
             <div className="grid gap-4">
               <div className="space-y-2">
-                <Label htmlFor="apiKey">Clé API</Label>
+                <Label htmlFor="apiKey">Clé API (JWT Token)</Label>
                 <Input
                   id="apiKey"
                   type="password"
-                  placeholder="Entrez votre clé API GoHighLevel"
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                   value={ghlApiKey}
                   onChange={(e) => setGhlApiKey(e.target.value)}
                 />
                 <p className="text-sm text-muted-foreground">
-                  Trouvez votre clé API dans les paramètres de votre compte GoHighLevel
+                  Trouvez votre clé API JWT dans les paramètres de votre compte GoHighLevel
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="subdomain">Sous-domaine</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="subdomain"
-                    placeholder="votre-agence"
-                    value={ghlSubdomain}
-                    onChange={(e) => setGhlSubdomain(e.target.value)}
-                  />
-                  <span className="flex items-center text-muted-foreground">.gohighlevel.com</span>
+              {locationId && (
+                <div className="rounded-lg bg-muted p-4">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
+                    <div>
+                      <h3 className="font-medium">ID de location détecté</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {locationId}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex items-center space-x-2 pt-2">
                 <Switch
@@ -231,38 +272,7 @@ const Integrations = () => {
                   checked={isAgencyMode}
                   onCheckedChange={setIsAgencyMode}
                 />
-                <Label htmlFor="agencyMode">Mode Agence (gérer plusieurs sous-comptes)</Label>
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-muted p-4 space-y-3">
-              <div className="flex items-start gap-2">
-                <Webhook className="h-5 w-5 text-primary mt-0.5" />
-                <div>
-                  <h3 className="font-medium">Configuration du Webhook</h3>
-                  <p className="text-sm text-muted-foreground mb-2">
-                    Copiez cette URL de webhook dans vos paramètres d'intégration GoHighLevel
-                  </p>
-                  <div className="flex gap-2">
-                    <Input
-                      value={webhookEndpoint}
-                      readOnly
-                      className="bg-background font-mono text-sm"
-                    />
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        navigator.clipboard.writeText(webhookEndpoint);
-                        toast({
-                          title: "Copié !",
-                          description: "URL du webhook copiée dans le presse-papier",
-                        });
-                      }}
-                    >
-                      Copier
-                    </Button>
-                  </div>
-                </div>
+                <Label htmlFor="agencyMode">Mode Agence (gérer plusieurs comptes clients)</Label>
               </div>
             </div>
 
@@ -282,23 +292,23 @@ const Integrations = () => {
                 <div className="flex items-center gap-2">
                   <Globe2 className="h-8 w-8 text-primary" />
                   <div>
-                    <CardTitle>Sous-comptes GoHighLevel</CardTitle>
+                    <CardTitle>Comptes Clients GoHighLevel</CardTitle>
                     <CardDescription>
-                      Gérez les sous-comptes client liés à votre compte agence
+                      Gérez les comptes clients liés à votre compte agence
                     </CardDescription>
                   </div>
                 </div>
                 <Button onClick={openAddSubAccountDialog} className="gap-2">
                   <Plus className="h-4 w-4" />
-                  <span>Ajouter un sous-compte</span>
+                  <span>Ajouter un compte client</span>
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
               {subAccounts.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  <p>Aucun sous-compte n'a été ajouté.</p>
-                  <p className="text-sm">Cliquez sur "Ajouter un sous-compte" pour commencer.</p>
+                  <p>Aucun compte client n'a été ajouté.</p>
+                  <p className="text-sm">Cliquez sur "Ajouter un compte client" pour commencer.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -314,7 +324,7 @@ const Integrations = () => {
                         />
                         <div>
                           <h3 className="font-medium">{account.name}</h3>
-                          <p className="text-sm text-muted-foreground">{account.subdomain}.gohighlevel.com</p>
+                          <p className="text-sm text-muted-foreground">Location ID: {account.locationId}</p>
                         </div>
                       </div>
                       <div className="flex gap-2">
@@ -365,18 +375,11 @@ const Integrations = () => {
                   {apiKeys.goHighLevel ? "Connectée" : "Non connectée"}
                 </span>
               </div>
-              <div className="flex items-center justify-between py-2 border-b">
-                <div className="flex items-center gap-2">
-                  <Webhook className="h-4 w-4 text-muted-foreground" />
-                  <span>Statut du Webhook</span>
-                </div>
-                <span className="text-yellow-500">En attente</span>
-              </div>
               {isAgencyMode && (
                 <div className="flex items-center justify-between py-2 border-b">
                   <div className="flex items-center gap-2">
                     <Globe2 className="h-4 w-4 text-muted-foreground" />
-                    <span>Sous-comptes actifs</span>
+                    <span>Comptes clients actifs</span>
                   </div>
                   <span className="text-green-500">
                     {subAccounts.filter(acc => acc.active).length}/{subAccounts.length}
@@ -387,17 +390,17 @@ const Integrations = () => {
           </CardContent>
         </Card>
 
-        {/* Dialog for adding/editing sub-accounts */}
+        {/* Dialog pour ajouter/modifier des comptes clients */}
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>
-                {editingAccount ? "Modifier le sous-compte" : "Ajouter un sous-compte"}
+                {editingAccount ? "Modifier le compte client" : "Ajouter un compte client"}
               </DialogTitle>
               <DialogDescription>
                 {editingAccount 
-                  ? "Modifiez les informations du sous-compte GoHighLevel."
-                  : "Ajoutez un nouveau sous-compte client à votre agence GoHighLevel."}
+                  ? "Modifiez les informations du compte client GoHighLevel."
+                  : "Ajoutez un nouveau compte client à votre agence GoHighLevel."}
               </DialogDescription>
             </DialogHeader>
             
@@ -413,28 +416,32 @@ const Integrations = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="accountSubdomain">Sous-domaine</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="accountSubdomain"
-                    placeholder="sous-domaine-client"
-                    value={ghlSubdomain}
-                    onChange={(e) => setGhlSubdomain(e.target.value)}
-                  />
-                  <span className="flex items-center text-muted-foreground">.gohighlevel.com</span>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="accountApiKey">Clé API</Label>
+                <Label htmlFor="accountApiKey">Clé API (JWT Token)</Label>
                 <Input
                   id="accountApiKey"
                   type="password"
-                  placeholder="Clé API du sous-compte"
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                   value={ghlApiKey}
                   onChange={(e) => setGhlApiKey(e.target.value)}
                 />
+                <p className="text-sm text-muted-foreground">
+                  Collez le token JWT généré pour ce compte client
+                </p>
               </div>
+
+              {locationId && (
+                <div className="rounded-lg bg-muted p-4">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
+                    <div>
+                      <h3 className="font-medium">ID de location détecté</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {locationId}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             
             <DialogFooter>

@@ -46,7 +46,7 @@ export interface OpenAiParams {
 // GoHighLevel integration
 export interface GoHighLevelConfig {
   apiKey: string;
-  webhookUrl: string;
+  locationId: string;
   mappedFields: MappedField[];
 }
 
