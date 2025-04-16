@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -14,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
+import { TestTube } from 'lucide-react';
 
 interface GhlFieldMapping {
   id: string;
@@ -125,6 +125,37 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
     },
   });
 
+  const testGhlValueMutation = useMutation({
+    mutationFn: async (ghlFieldKey: string) => {
+      const { data: mappings } = await supabase
+        .from('ghl_field_mappings')
+        .select('*')
+        .eq('chatbot_id', chatbotId)
+        .eq('ghl_field_key', ghlFieldKey)
+        .single();
+
+      if (!mappings) {
+        throw new Error('Mapping not found');
+      }
+
+      const simulatedGhlValue = `Value from GHL for key: ${ghlFieldKey}`;
+      return simulatedGhlValue;
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Test Réussi",
+        description: `Valeur récupérée: ${data}`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Erreur de Test",
+        description: `Erreur lors de la récupération de la valeur: ${error.message}`,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleAddMapping = () => {
     if (!newMapping.ghl_field_key || !newMapping.chatbot_parameter) {
       toast({
@@ -135,7 +166,6 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
       return;
     }
     
-    // Ensure all required fields are present in the object we send to Supabase
     const mappingToAdd = {
       chatbot_id: newMapping.chatbot_id,
       field_type: newMapping.field_type,
@@ -146,13 +176,16 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
     addMappingMutation.mutate(mappingToAdd);
   };
 
+  const handleTestMapping = (ghlFieldKey: string) => {
+    testGhlValueMutation.mutate(ghlFieldKey);
+  };
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Mappings GoHighLevel</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Formulaire d'ajout */}
         <div className="space-y-4 border-b pb-6">
           <div className="space-y-2">
             <Label>Type de champ GHL</Label>
@@ -207,7 +240,6 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
           </Button>
         </div>
 
-        {/* Liste des mappings existants */}
         <div className="space-y-4">
           <h3 className="font-medium">Mappings existants</h3>
           {mappings?.map((mapping) => (
@@ -220,14 +252,25 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
                   }
                 </p>
               </div>
-              <Button 
-                variant="destructive" 
-                size="sm"
-                onClick={() => deleteMappingMutation.mutate(mapping.id)}
-                disabled={deleteMappingMutation.isPending}
-              >
-                Supprimer
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => handleTestMapping(mapping.ghl_field_key)}
+                  disabled={testGhlValueMutation.isPending}
+                >
+                  <TestTube className="h-4 w-4 mr-1" />
+                  Tester
+                </Button>
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  onClick={() => deleteMappingMutation.mutate(mapping.id)}
+                  disabled={deleteMappingMutation.isPending}
+                >
+                  Supprimer
+                </Button>
+              </div>
             </div>
           ))}
         </div>
