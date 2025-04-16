@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Layout from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
@@ -38,16 +37,11 @@ const extractGhlIds = (jwt: string): { locationId?: string; companyId?: string; 
     const payload = JSON.parse(atob(parts[1]));
     
     // Vérifier la présence d'un company_id ou location_id
-    const result = {
+    return {
       locationId: payload.location_id || undefined,
       companyId: payload.company_id || undefined,
       isValid: !!(payload.location_id || payload.company_id)
     };
-    
-    console.log('Extracted JWT payload:', payload);
-    console.log('Extracted IDs:', result);
-    
-    return result;
   } catch (error) {
     console.error('Erreur lors du décodage du JWT:', error);
     return { isValid: false };
@@ -70,6 +64,8 @@ const Integrations = () => {
     if (ghlApiKey) {
       const extracted = extractGhlIds(ghlApiKey);
       setGhlIds(extracted);
+      console.log('Extracted JWT payload:', JSON.parse(atob(ghlApiKey.split('.')[1])));
+      console.log('Extracted IDs:', extracted);
     } else {
       setGhlIds({ isValid: false });
     }

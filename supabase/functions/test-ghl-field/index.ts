@@ -29,7 +29,8 @@ serve(async (req) => {
     }
 
     // Handle the case where locationId is not provided
-    if (!locationId) {
+    let finalLocationId = locationId;
+    if (!finalLocationId) {
       console.log('Warning: locationId not provided - attempting to extract from JWT')
       
       try {
@@ -39,12 +40,9 @@ serve(async (req) => {
           const payload = JSON.parse(atob(parts[1]));
           console.log('JWT payload:', payload);
           
-          const extractedLocationId = payload.location_id;
-          
-          if (extractedLocationId) {
-            console.log(`Successfully extracted locationId from JWT: ${extractedLocationId}`);
-            // Use the extracted locationId
-            return await processGhlRequest(extractedLocationId, ghlApiKey, fieldKey);
+          if (payload.location_id) {
+            finalLocationId = payload.location_id;
+            console.log(`Successfully extracted locationId from JWT: ${finalLocationId}`);
           } else {
             console.log('No location_id found in JWT payload');
             
@@ -72,21 +70,29 @@ serve(async (req) => {
               console.log(`Found ${locations.locations?.length || 0} locations`);
               
               if (locations.locations && locations.locations.length > 0) {
-                const firstLocationId = locations.locations[0].id;
-                console.log(`Using first location found: ${firstLocationId}`);
-                return await processGhlRequest(firstLocationId, ghlApiKey, fieldKey);
+                finalLocationId = locations.locations[0].id;
+                console.log(`Using first location found: ${finalLocationId}`);
+              } else {
+                throw new Error('No locations found for this company');
               }
+            } else {
+              throw new Error('Neither location_id nor company_id found in JWT');
             }
           }
+        } else {
+          throw new Error('Invalid JWT format');
         }
       } catch (jwtError) {
         console.error('Error extracting location ID from JWT:', jwtError);
+        throw new Error(`Could not determine location ID: ${jwtError.message}`);
       }
-      
-      throw new Error('Could not determine location ID - please provide it explicitly or use a valid JWT with location_id')
     }
 
-    return await processGhlRequest(locationId, ghlApiKey, fieldKey);
+    if (!finalLocationId) {
+      throw new Error('Could not determine location ID - please provide it explicitly or use a valid JWT with location_id');
+    }
+
+    return await processGhlRequest(finalLocationId, ghlApiKey, fieldKey);
 
   } catch (error) {
     console.error('Error in test-ghl-field function:', error)
@@ -167,7 +173,10 @@ async function processGhlRequest(locationId: string, ghlApiKey: string, fieldKey
       'message_accueil',
       'message accueil',
       'welcome',
-      'accueil'
+      'accueil',
+      'intro_message',
+      'intro',
+      'message'
     ]
     
     // Original normalized search terms
@@ -183,7 +192,9 @@ async function processGhlRequest(locationId: string, ghlApiKey: string, fieldKey
     searchTerms.push(fieldKey.toLowerCase().replace(/[{}]/g, '').trim());
     
     // Add welcome-specific terms if we're looking for welcome message
-    if (fieldKey.toLowerCase().includes('welcome') || fieldKey.toLowerCase().includes('message')) {
+    if (fieldKey.toLowerCase().includes('welcome') || 
+        fieldKey.toLowerCase().includes('message') || 
+        fieldKey.toLowerCase().includes('intro')) {
       welcomeTerms.forEach(term => {
         if (!searchTerms.includes(term)) {
           searchTerms.push(term)
@@ -233,7 +244,9 @@ async function processGhlRequest(locationId: string, ghlApiKey: string, fieldKey
     }
 
     // Special case for welcome message - broader search
-    if (!customValue && (fieldKey.toLowerCase().includes('welcome') || fieldKey.toLowerCase().includes('message'))) {
+    if (!customValue && (fieldKey.toLowerCase().includes('welcome') || 
+                         fieldKey.toLowerCase().includes('message') || 
+                         fieldKey.toLowerCase().includes('intro'))) {
       customValue = data.customValues?.find((cv: any) => 
         welcomeTerms.some(term => 
           cv.key.toLowerCase().includes(term) || 

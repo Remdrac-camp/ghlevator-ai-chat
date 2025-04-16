@@ -194,6 +194,15 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
       console.log('LocationID from localStorage:', locationId);
       console.log('GHL API Key available:', !!ghlApiKey);
       
+      if (!ghlApiKey) {
+        toast({
+          title: "API GHL manquante",
+          description: "Aucune clé API GHL trouvée. Veuillez configurer l'intégration GHL d'abord.",
+          variant: "destructive",
+        });
+        throw new Error('No GHL API key found in local storage');
+      }
+      
       // Si pas de locationId, essayer d'extraire du token JWT
       if (!locationId && ghlApiKey) {
         console.log('Tentative d\'extraction du locationId depuis le JWT...');
@@ -204,26 +213,9 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
           localStorage.setItem('ghlLocationId', locationId);
           console.log('LocationID extrait du JWT et stocké:', locationId);
         } else if (extracted.isValid && extracted.companyId) {
+          // Si on n'a que le companyId, on laissera l'Edge Function s'occuper de récupérer un locationId
           console.log('CompanyID trouvé, mais pas de LocationID. CompanyID:', extracted.companyId);
         }
-      }
-      
-      if (!locationId) {
-        toast({
-          title: "Location ID manquant",
-          description: "Aucun Location ID trouvé. Assurez-vous que le compte GHL est correctement configuré dans les Intégrations.",
-          variant: "destructive",
-        });
-        throw new Error('Location ID not found in local storage or JWT');
-      }
-      
-      if (!ghlApiKey) {
-        toast({
-          title: "API GHL manquante",
-          description: "Aucune clé API GHL trouvée. Veuillez configurer l'intégration GHL d'abord.",
-          variant: "destructive",
-        });
-        throw new Error('No GHL API key found in local storage');
       }
       
       // Find the specific mapping for this key
@@ -355,15 +347,6 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
       }
     }
 
-    if (!locationId) {
-      toast({
-        title: "Location ID manquant",
-        description: "Aucun Location ID trouvé. Assurez-vous que le compte GHL est correctement configuré dans les Intégrations.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
     if (!ghlApiKey) {
       toast({
         title: "API GHL manquante",
@@ -376,7 +359,7 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
     // Call the test function with a special search key for welcome messages
     const { data, error } = await supabase.functions.invoke('test-ghl-field', {
       body: {
-        locationId: locationId,
+        locationId: locationId,  // Peut être undefined, l'edge function essaiera d'extraire le locationId
         ghlApiKey: ghlApiKey,
         fieldKey: "welcome_message"
       }
@@ -407,7 +390,7 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
 
   // Effet pour vérifier les données GHL au chargement
   useEffect(() => {
-    const checkGhlConfiguration = () => {
+    const checkGhlConfiguration = async () => {
       // Vérifier le locationId dans localStorage
       let locationId = localStorage.getItem('ghlLocationId');
       const ghlApiKey = localStorage.getItem('ghlApiKey');
@@ -424,13 +407,14 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
         }
       }
       
-      // Informer l'utilisateur de l'état de la configuration
-      if (!locationId || !ghlApiKey) {
+      // S'assurer que la clé API est toujours disponible mais ne pas afficher le toast si c'est le cas
+      if (ghlApiKey) {
+        console.log("Clé API GHL disponible au chargement.");
+      } else {
+        // Informer l'utilisateur de l'état de la configuration
         toast({
           title: "Configuration GHL incomplète",
-          description: !locationId 
-            ? "Location ID non trouvé. Configurez l'intégration GHL dans la page Intégrations." 
-            : "Clé API GHL non trouvée. Configurez l'intégration GHL dans la page Intégrations.",
+          description: "Clé API GHL non trouvée. Configurez l'intégration GHL dans la page Intégrations.",
           variant: "destructive",
         });
       }
