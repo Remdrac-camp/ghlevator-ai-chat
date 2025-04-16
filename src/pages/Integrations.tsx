@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import {
   Globe2,
   KeyRound,
@@ -91,6 +91,21 @@ const Integrations = () => {
       const extracted = extractGhlIds(apiKeys.goHighLevel);
       setGhlIds(extracted);
       setGhlApiKey(apiKeys.goHighLevel);
+      
+      // Assurer que les IDs sont toujours dans le localStorage
+      if (extracted.locationId) {
+        localStorage.setItem('ghlLocationId', extracted.locationId);
+        console.log('LocationID sauvegardé au chargement:', extracted.locationId);
+      }
+      
+      if (extracted.companyId) {
+        localStorage.setItem('ghlCompanyId', extracted.companyId);
+        console.log('CompanyID sauvegardé au chargement:', extracted.companyId);
+      }
+      
+      // Toujours sauvegarder la clé API
+      localStorage.setItem('ghlApiKey', apiKeys.goHighLevel);
+      console.log('Clé API GHL sauvegardée au chargement');
     }
   }, [apiKeys.goHighLevel]);
 
@@ -125,17 +140,20 @@ const Integrations = () => {
     // Sauvegarder les IDs dans le localStorage avec des clés plus précises
     if (ghlIds.locationId) {
       localStorage.setItem('ghlLocationId', ghlIds.locationId);
+      console.log('LocationID sauvegardé:', ghlIds.locationId);
     }
     
     if (ghlIds.companyId) {
       localStorage.setItem('ghlCompanyId', ghlIds.companyId);
       localStorage.setItem('ghlIsAgencyAccount', 'true');
+      console.log('CompanyID sauvegardé:', ghlIds.companyId);
     } else {
       localStorage.setItem('ghlIsAgencyAccount', 'false');
     }
     
     // Sauvegarder la clé API GHL pour une utilisation ultérieure
     localStorage.setItem('ghlApiKey', ghlApiKey);
+    console.log('Clé API GHL sauvegardée');
     
     toast({
       title: "Intégration réussie",

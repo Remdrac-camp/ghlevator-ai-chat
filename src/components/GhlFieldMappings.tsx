@@ -1,5 +1,4 @@
-
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -51,6 +50,33 @@ const CHATBOT_PARAMETERS = [
   { value: 'temperature', label: 'Temperature' },
   { value: 'max_tokens', label: 'Max Tokens' },
 ];
+
+// Fonction améliorée pour extraire l'ID de location ou company à partir du JWT
+const extractGhlIds = (jwt: string): { locationId?: string; companyId?: string; isValid: boolean } => {
+  try {
+    // Diviser le JWT en parties
+    const parts = jwt.split('.');
+    if (parts.length !== 3) return { isValid: false };
+    
+    // Décoder la partie payload
+    const payload = JSON.parse(atob(parts[1]));
+    
+    // Vérifier la présence d'un company_id ou location_id
+    const result = {
+      locationId: payload.location_id || undefined,
+      companyId: payload.company_id || undefined,
+      isValid: !!(payload.location_id || payload.company_id)
+    };
+    
+    console.log('Extracted JWT payload:', payload);
+    console.log('Extracted IDs:', result);
+    
+    return result;
+  } catch (error) {
+    console.error('Erreur lors du décodage du JWT:', error);
+    return { isValid: false };
+  }
+};
 
 // Helper function to format GHL keys
 const formatGhlKey = (key: string): string => {
@@ -160,24 +186,27 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
 
   const testGhlValueMutation = useMutation({
     mutationFn: async (ghlFieldKey: string) => {
-      const { data: mappings } = await supabase
-        .from('ghl_field_mappings')
-        .select('*')
-        .eq('chatbot_id', chatbotId);
-
-      if (!mappings || mappings.length === 0) {
-        throw new Error('No mappings found for this chatbot');
-      }
-
-      // Find the specific mapping for this key
-      const mapping = mappings.find(m => m.ghl_field_key === ghlFieldKey);
-      if (!mapping) {
-        throw new Error('Mapping not found');
-      }
-
       // Get the locationId from localStorage - this is set in Integrations.tsx
-      const locationId = localStorage.getItem('ghlLocationId');
+      let locationId = localStorage.getItem('ghlLocationId');
+      // Récupérer également la clé API GHL
+      const ghlApiKey = localStorage.getItem('ghlApiKey');
+      
       console.log('LocationID from localStorage:', locationId);
+      console.log('GHL API Key available:', !!ghlApiKey);
+      
+      // Si pas de locationId, essayer d'extraire du token JWT
+      if (!locationId && ghlApiKey) {
+        console.log('Tentative d\'extraction du locationId depuis le JWT...');
+        const extracted = extractGhlIds(ghlApiKey);
+        if (extracted.isValid && extracted.locationId) {
+          locationId = extracted.locationId;
+          // Stocker pour utilisation future
+          localStorage.setItem('ghlLocationId', locationId);
+          console.log('LocationID extrait du JWT et stocké:', locationId);
+        } else if (extracted.isValid && extracted.companyId) {
+          console.log('CompanyID trouvé, mais pas de LocationID. CompanyID:', extracted.companyId);
+        }
+      }
       
       if (!locationId) {
         toast({
@@ -185,9 +214,24 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
           description: "Aucun Location ID trouvé. Assurez-vous que le compte GHL est correctement configuré dans les Intégrations.",
           variant: "destructive",
         });
-        throw new Error('Location ID not found in local storage');
+        throw new Error('Location ID not found in local storage or JWT');
       }
-
+      
+      if (!ghlApiKey) {
+        toast({
+          title: "API GHL manquante",
+          description: "Aucune clé API GHL trouvée. Veuillez configurer l'intégration GHL d'abord.",
+          variant: "destructive",
+        });
+        throw new Error('No GHL API key found in local storage');
+      }
+      
+      // Find the specific mapping for this key
+      const mapping = mappings?.find(m => m.ghl_field_key === ghlFieldKey);
+      if (!mapping) {
+        throw new Error('Mapping not found');
+      }
+      
       // Get the parameter label that we're testing
       const parameterInfo = CHATBOT_PARAMETERS.find(p => p.value === mapping.chatbot_parameter);
       const parameterLabel = parameterInfo?.label || mapping.chatbot_parameter;
@@ -208,17 +252,6 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
       console.log(`Testing GHL field: ${searchKey} for parameter: ${parameterLabel}`);
       console.log(`Using locationId: ${locationId}`);
 
-      // Get GHL API key from localStorage
-      const ghlApiKey = localStorage.getItem('ghlApiKey');
-      if (!ghlApiKey) {
-        toast({
-          title: "API GHL manquante",
-          description: "Aucune clé API GHL trouvée. Veuillez configurer l'intégration GHL d'abord.",
-          variant: "destructive",
-        });
-        throw new Error('No GHL API key found in local storage');
-      }
-      
       // Call the test function
       const { data, error } = await supabase.functions.invoke('test-ghl-field', {
         body: {
@@ -301,8 +334,26 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
 
   const findWelcomeMessages = async () => {
     // Get the locationId from localStorage - this is set in Integrations.tsx
-    const locationId = localStorage.getItem('ghlLocationId');
+    let locationId = localStorage.getItem('ghlLocationId');
     console.log('LocationID from localStorage:', locationId);
+
+    // Get GHL API key from localStorage
+    const ghlApiKey = localStorage.getItem('ghlApiKey');
+    console.log('GHL API Key available:', !!ghlApiKey);
+    
+    // Si pas de locationId, essayer d'extraire du token JWT
+    if (!locationId && ghlApiKey) {
+      console.log('Tentative d\'extraction du locationId depuis le JWT...');
+      const extracted = extractGhlIds(ghlApiKey);
+      if (extracted.isValid && extracted.locationId) {
+        locationId = extracted.locationId;
+        // Stocker pour utilisation future
+        localStorage.setItem('ghlLocationId', locationId);
+        console.log('LocationID extrait du JWT et stocké:', locationId);
+      } else if (extracted.isValid && extracted.companyId) {
+        console.log('CompanyID trouvé, mais pas de LocationID. CompanyID:', extracted.companyId);
+      }
+    }
 
     if (!locationId) {
       toast({
@@ -313,8 +364,6 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
       return;
     }
     
-    // Get GHL API key from localStorage
-    const ghlApiKey = localStorage.getItem('ghlApiKey');
     if (!ghlApiKey) {
       toast({
         title: "API GHL manquante",
@@ -355,6 +404,40 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
       )
     });
   };
+
+  // Effet pour vérifier les données GHL au chargement
+  useEffect(() => {
+    const checkGhlConfiguration = () => {
+      // Vérifier le locationId dans localStorage
+      let locationId = localStorage.getItem('ghlLocationId');
+      const ghlApiKey = localStorage.getItem('ghlApiKey');
+      
+      // Si le locationId n'est pas présent mais qu'on a une clé API
+      if (!locationId && ghlApiKey) {
+        console.log("Tentative d'extraire le locationId depuis le JWT au chargement...");
+        const extracted = extractGhlIds(ghlApiKey);
+        
+        if (extracted.isValid && extracted.locationId) {
+          locationId = extracted.locationId;
+          localStorage.setItem('ghlLocationId', locationId);
+          console.log("LocationID extrait et sauvegardé:", locationId);
+        }
+      }
+      
+      // Informer l'utilisateur de l'état de la configuration
+      if (!locationId || !ghlApiKey) {
+        toast({
+          title: "Configuration GHL incomplète",
+          description: !locationId 
+            ? "Location ID non trouvé. Configurez l'intégration GHL dans la page Intégrations." 
+            : "Clé API GHL non trouvée. Configurez l'intégration GHL dans la page Intégrations.",
+          variant: "destructive",
+        });
+      }
+    };
+    
+    checkGhlConfiguration();
+  }, [toast]);
 
   return (
     <>
