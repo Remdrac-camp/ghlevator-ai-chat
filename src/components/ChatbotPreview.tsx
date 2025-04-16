@@ -1,27 +1,88 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChatbotConfig, Message } from '@/types';
 import { Send } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/components/ui/use-toast';
 
 interface ChatbotPreviewProps {
   chatbot: ChatbotConfig;
 }
 
 const ChatbotPreview: React.FC<ChatbotPreviewProps> = ({ chatbot }) => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
+  const { apiKeys } = useAuth();
+  const { toast } = useToast();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [userInput, setUserInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState<Array<{ role: string; content: string }>>([]);
+
+  // Initialize the chat with the welcome message
+  useEffect(() => {
+    const welcomeMessage: Message = {
       id: '1',
       role: 'assistant',
       content: chatbot.welcomeMessage,
       timestamp: new Date()
+    };
+    
+    setMessages([welcomeMessage]);
+    setConversationHistory([
+      { role: 'system', content: chatbot.systemPrompt },
+      { role: 'assistant', content: chatbot.welcomeMessage }
+    ]);
+  }, [chatbot.welcomeMessage, chatbot.systemPrompt]);
+
+  const callOpenAI = async (history: Array<{ role: string; content: string }>) => {
+    if (!apiKeys.openai) {
+      toast({
+        title: "API Key Missing",
+        description: "Please add your OpenAI API key in the API Keys section.",
+        variant: "destructive"
+      });
+      return "I can't respond right now. Please make sure an OpenAI API key is configured in the API Keys section.";
     }
-  ]);
-  const [userInput, setUserInput] = useState('');
-  const [loading, setLoading] = useState(false);
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKeys.openai}`
+        },
+        body: JSON.stringify({
+          model: chatbot.openaiParams.model,
+          messages: history,
+          temperature: chatbot.openaiParams.temperature,
+          max_tokens: chatbot.openaiParams.maxTokens,
+          top_p: chatbot.openaiParams.topP,
+          frequency_penalty: chatbot.openaiParams.frequencyPenalty,
+          presence_penalty: chatbot.openaiParams.presencePenalty
+        })
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        console.error("OpenAI API error:", data);
+        throw new Error(data.error?.message || 'Failed to get response');
+      }
+
+      return data.choices[0].message.content;
+    } catch (error) {
+      console.error("Error calling OpenAI:", error);
+      toast({
+        title: "API Error",
+        description: `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`,
+        variant: "destructive"
+      });
+      return "Sorry, I encountered an error. Please try again later.";
+    }
+  };
 
   const handleSendMessage = async () => {
     if (!userInput.trim()) return;
@@ -38,53 +99,46 @@ const ChatbotPreview: React.FC<ChatbotPreviewProps> = ({ chatbot }) => {
     setUserInput('');
     setLoading(true);
 
-    // Simulate API delay
-    setTimeout(() => {
-      // Process objectives (simple simulation)
-      let responseContent = '';
-      let nextObjective = null;
+    // Update conversation history
+    const updatedHistory = [
+      ...conversationHistory,
+      { role: 'user', content: userInput }
+    ];
+    setConversationHistory(updatedHistory);
 
-      // Find the first incomplete objective
-      for (const objective of chatbot.objectives) {
-        if (!objective.completed) {
-          nextObjective = objective;
-          break;
+    try {
+      // Get response from OpenAI
+      const responseContent = await callOpenAI(updatedHistory);
+
+      // Check if any objectives are met in the user's message
+      let objectivesUpdated = false;
+      const updatedObjectives = chatbot.objectives.map(objective => {
+        if (objective.completed) return objective;
+
+        // Simple check if the user message contains information related to the objective
+        // In a real implementation, this would be more sophisticated
+        let matched = false;
+        if (objective.fieldToExtract === 'email' && userInput.includes('@')) {
+          matched = true;
+        } else if (objective.fieldToExtract === 'phone' && /\d{3}[-.\s]?\d{3}[-.\s]?\d{4}/.test(userInput)) {
+          matched = true;
+        } else if (objective.fieldToExtract === 'name' && userInput.length > 2 && !/^[0-9\s]+$/.test(userInput)) {
+          matched = true;
         }
+
+        if (matched) {
+          objectivesUpdated = true;
+          return { ...objective, completed: true };
+        }
+        return objective;
+      });
+
+      if (objectivesUpdated) {
+        // This is a simulation - in a real app you'd want to update the objectives in the chatbot context
+        console.log("Objectives updated:", updatedObjectives);
       }
 
-      if (nextObjective) {
-        // Simulate AI trying to collect specific information
-        if (nextObjective.fieldToExtract === 'email' && userMessage.content.includes('@')) {
-          responseContent = `Thank you for providing your email. What's your name?`;
-        } else if (nextObjective.fieldToExtract === 'name' && userMessage.content.length > 2) {
-          responseContent = `Nice to meet you, ${userMessage.content}! How can I help you today?`;
-        } else if (nextObjective.fieldToExtract === 'phone' && /\d/.test(userMessage.content)) {
-          responseContent = `Got your contact number. What services are you interested in?`;
-        } else {
-          // Default response if objective not met
-          if (nextObjective.fieldToExtract === 'email') {
-            responseContent = "To help you better, could you please share your email address?";
-          } else if (nextObjective.fieldToExtract === 'phone') {
-            responseContent = "What's a good phone number where we can reach you?";
-          } else if (nextObjective.fieldToExtract === 'name') {
-            responseContent = "What's your name?";
-          } else {
-            responseContent = "Thanks for your message. Can you please provide more information?";
-          }
-        }
-      } else {
-        // Generic responses when no objectives are pending
-        const genericResponses = [
-          "That's interesting! Tell me more about what you're looking for.",
-          "I appreciate your patience. How else can I assist you today?",
-          "I'll make a note of that. Is there anything specific you need help with?",
-          "Thank you for sharing that information. What other questions do you have?"
-        ];
-        
-        responseContent = genericResponses[Math.floor(Math.random() * genericResponses.length)];
-      }
-
-      // Add AI response
+      // Add AI response to chat
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -93,8 +147,17 @@ const ChatbotPreview: React.FC<ChatbotPreviewProps> = ({ chatbot }) => {
       };
       
       setMessages(prev => [...prev, aiMessage]);
+      
+      // Update conversation history with AI response
+      setConversationHistory([
+        ...updatedHistory,
+        { role: 'assistant', content: responseContent }
+      ]);
+    } catch (error) {
+      console.error("Error in chat:", error);
+    } finally {
       setLoading(false);
-    }, 1500);
+    }
   };
 
   return (
@@ -150,7 +213,7 @@ const ChatbotPreview: React.FC<ChatbotPreviewProps> = ({ chatbot }) => {
             onChange={(e) => setUserInput(e.target.value)}
             className="flex-1"
           />
-          <Button type="submit" size="icon">
+          <Button type="submit" size="icon" disabled={loading}>
             <Send className="h-4 w-4" />
           </Button>
         </form>
