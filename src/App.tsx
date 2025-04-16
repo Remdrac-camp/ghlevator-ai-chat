@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import Chatbots from "./pages/Chatbots";
 import ChatbotConfig from "./pages/ChatbotConfig";
 import ChatbotTester from "./pages/ChatbotTester";
 import ApiKeys from "./pages/ApiKeys";
@@ -30,6 +31,7 @@ const App = () => (
               <Route path="/" element={<Index />} />
               <Route path="/login" element={<Login />} />
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/chatbots" element={<Chatbots />} />
               <Route path="/chatbots/:id" element={<ChatbotConfig />} />
               <Route path="/chatbots/:id/test" element={<ChatbotTester />} />
               <Route path="/api-keys" element={<ApiKeys />} />
