@@ -9,3 +9,27 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 // import { supabase } from "@/integrations/supabase/client";
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+// Helper for GoHighLevel API - use correct API format
+export const getGhlApiHeaders = (apiKey: string) => {
+  // Check if it's a JWT (contains dots with base64 segments)
+  if (apiKey && apiKey.split('.').length === 3) {
+    return {
+      'Authorization': `Bearer ${apiKey}`,
+      'Version': '2021-07-28',
+      'Accept': 'application/json',
+    };
+  } 
+  // Otherwise treat as a standard API key
+  else if (apiKey) {
+    return {
+      'Authorization': apiKey,
+      'Version': '2021-07-28',
+      'Accept': 'application/json',
+    };
+  }
+  
+  return {
+    'Accept': 'application/json',
+  };
+};
