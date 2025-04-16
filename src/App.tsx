@@ -12,6 +12,7 @@ import ChatbotConfig from "./pages/ChatbotConfig";
 import ChatbotTester from "./pages/ChatbotTester";
 import ApiKeys from "./pages/ApiKeys";
 import Integrations from "./pages/Integrations";
+import Settings from "./pages/Settings";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ChatbotProvider } from "./contexts/ChatbotContext";
 
@@ -33,6 +34,7 @@ const App = () => (
               <Route path="/chatbots/:id/test" element={<ChatbotTester />} />
               <Route path="/api-keys" element={<ApiKeys />} />
               <Route path="/integrations" element={<Integrations />} />
+              <Route path="/settings" element={<Settings />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
