@@ -127,24 +127,38 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
 
   const testGhlValueMutation = useMutation({
     mutationFn: async (ghlFieldKey: string) => {
-      const { data: mappings } = await supabase
+      const { data: mapping } = await supabase
         .from('ghl_field_mappings')
         .select('*')
         .eq('chatbot_id', chatbotId)
         .eq('ghl_field_key', ghlFieldKey)
         .single();
 
-      if (!mappings) {
+      if (!mapping) {
         throw new Error('Mapping not found');
       }
 
-      const simulatedGhlValue = `Value from GHL for key: ${ghlFieldKey}`;
-      return simulatedGhlValue;
+      if (!mapping.location_id) {
+        throw new Error('Location ID not found for this mapping');
+      }
+
+      const { data, error } = await supabase.functions.invoke('test-ghl-field', {
+        body: {
+          locationId: mapping.location_id,
+          ghlApiKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJsb2NhdGlvbl9pZCI6IkdHSnozZFBvZ2t5ZnF4NDM3d01IIiwidmVyc2lvbiI6MSwiaWF0IjoxNzQzNTg0MTUwMzYxLCJzdWIiOiJDbkxiTWZ0OVpydzRacllzNlB3ayJ9.07VgsMsZs2C0-oyiqlyfxm4PmSZcdcsDdvYHe4plKHc",
+          fieldKey: ghlFieldKey
+        }
+      });
+
+      if (error) throw error;
+      return data;
     },
     onSuccess: (data) => {
       toast({
-        title: "Test Réussi",
-        description: `Valeur récupérée: ${data}`,
+        title: data.found ? "Test Réussi" : "Champ non trouvé",
+        description: data.found 
+          ? `Valeur récupérée: ${data.value}` 
+          : "Aucune valeur trouvée pour cette clé dans GHL",
       });
     },
     onError: (error) => {
