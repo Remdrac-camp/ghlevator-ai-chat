@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { ChatbotConfig, Objective, GoHighLevelConfig } from '../types';
 
@@ -27,13 +26,38 @@ export const ChatbotProvider = ({ children }: { children: ReactNode }) => {
   React.useEffect(() => {
     const savedChatbots = localStorage.getItem('chatbots');
     const savedGHLConfig = localStorage.getItem('ghlConfig');
-
+    
+    // Migrate old GHL API key if it exists
+    const oldGhlApiKey = localStorage.getItem('ghlApiKey');
+    const oldGhlLocationId = localStorage.getItem('ghlLocationId');
+    const oldGhlCompanyId = localStorage.getItem('ghlCompanyId');
+    
     if (savedChatbots) {
       setChatbots(JSON.parse(savedChatbots));
     }
 
     if (savedGHLConfig) {
       setGoHighLevelConfig(JSON.parse(savedGHLConfig));
+    } else if (oldGhlApiKey) {
+      // Create a new config from old values for backward compatibility
+      const newConfig: GoHighLevelConfig = {
+        apiKey: oldGhlApiKey,
+        isAgency: localStorage.getItem('ghlIsAgencyAccount') === 'true',
+        mappedFields: []
+      };
+      
+      if (oldGhlLocationId) {
+        newConfig.locationId = oldGhlLocationId;
+      }
+      
+      if (oldGhlCompanyId) {
+        newConfig.companyId = oldGhlCompanyId;
+      }
+      
+      setGoHighLevelConfig(newConfig);
+      localStorage.setItem('ghlConfig', JSON.stringify(newConfig));
+      
+      console.log('Migrated old GHL config to new structure', newConfig);
     }
   }, []);
 
@@ -46,6 +70,19 @@ export const ChatbotProvider = ({ children }: { children: ReactNode }) => {
   React.useEffect(() => {
     if (goHighLevelConfig) {
       localStorage.setItem('ghlConfig', JSON.stringify(goHighLevelConfig));
+      
+      // Keep backwards compatibility with old code that reads from these keys
+      localStorage.setItem('ghlApiKey', goHighLevelConfig.apiKey);
+      
+      if (goHighLevelConfig.locationId) {
+        localStorage.setItem('ghlLocationId', goHighLevelConfig.locationId);
+      }
+      
+      if (goHighLevelConfig.companyId) {
+        localStorage.setItem('ghlCompanyId', goHighLevelConfig.companyId);
+      }
+      
+      localStorage.setItem('ghlIsAgencyAccount', goHighLevelConfig.isAgency ? 'true' : 'false');
     }
   }, [goHighLevelConfig]);
 

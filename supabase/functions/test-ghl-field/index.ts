@@ -57,14 +57,16 @@ serve(async (req) => {
               console.log(`Company ID found in JWT: ${payload.company_id}`);
               console.log('Attempting to fetch locations for this company...');
               
-              // Try to fetch locations for this company
-              const locationsResponse = await fetch('https://services.leadconnectorhq.com/locations/', {
+              // Try to fetch locations for this company - CORRIGER L'URL ICI
+              const locationsResponse = await fetch(`https://services.leadconnectorhq.com/companies/${payload.company_id}/locations/`, {
                 headers: {
                   'Authorization': `Bearer ${ghlApiKey}`,
                   'Version': '2021-07-28',
                   'Accept': 'application/json',
                 },
               });
+              
+              console.log(`GHL Locations API response status: ${locationsResponse.status} ${locationsResponse.statusText}`);
               
               if (!locationsResponse.ok) {
                 const errorText = await locationsResponse.text();
