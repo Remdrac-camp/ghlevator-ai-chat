@@ -21,11 +21,17 @@ serve(async (req) => {
     console.log('fieldKey:', fieldKey)
 
     if (!ghlApiKey) {
-      throw new Error('Missing GHL API key')
+      return new Response(
+        JSON.stringify({ error: 'Missing GHL API key', found: false }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
     if (!fieldKey) {
-      throw new Error('Missing field key to search')
+      return new Response(
+        JSON.stringify({ error: 'Missing field key to search', found: false }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
     // Handle the case where locationId is not provided
@@ -63,7 +69,19 @@ serve(async (req) => {
               if (!locationsResponse.ok) {
                 const errorText = await locationsResponse.text();
                 console.error(`GHL API error fetching locations: ${locationsResponse.status}`, errorText);
-                throw new Error(`Could not fetch locations for company: ${locationsResponse.statusText}`);
+                
+                // Instead of throwing an error, return a 200 response with error details
+                return new Response(
+                  JSON.stringify({ 
+                    error: `Could not fetch locations for company: ${locationsResponse.statusText}`,
+                    status: locationsResponse.status,
+                    responseText: errorText,
+                    found: false 
+                  }),
+                  { 
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+                  }
+                )
               }
               
               const locations = await locationsResponse.json();
@@ -73,40 +91,90 @@ serve(async (req) => {
                 finalLocationId = locations.locations[0].id;
                 console.log(`Using first location found: ${finalLocationId}`);
               } else {
-                throw new Error('No locations found for this company');
+                // Return 200 with error details in the body
+                return new Response(
+                  JSON.stringify({ 
+                    error: 'No locations found for this company',
+                    found: false 
+                  }),
+                  { 
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+                  }
+                )
               }
             } else {
-              throw new Error('Neither location_id nor company_id found in JWT');
+              // Return 200 with error details in the body
+              return new Response(
+                JSON.stringify({ 
+                  error: 'Neither location_id nor company_id found in JWT',
+                  found: false 
+                }),
+                { 
+                  headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+                }
+              )
             }
           }
         } else {
-          throw new Error('Invalid JWT format');
+          // Return 200 with error details in the body
+          return new Response(
+            JSON.stringify({ 
+              error: 'Invalid JWT format',
+              found: false 
+            }),
+            { 
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+            }
+          )
         }
       } catch (jwtError) {
         console.error('Error extracting location ID from JWT:', jwtError);
-        throw new Error(`Could not determine location ID: ${jwtError.message}`);
+        
+        // Return 200 with error details in the body
+        return new Response(
+          JSON.stringify({ 
+            error: `Could not determine location ID: ${jwtError.message}`,
+            found: false 
+          }),
+          { 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        )
       }
     }
 
     if (!finalLocationId) {
-      throw new Error('Could not determine location ID - please provide it explicitly or use a valid JWT with location_id');
+      // Return 200 with error details in the body
+      return new Response(
+        JSON.stringify({ 
+          error: 'Could not determine location ID - please provide it explicitly or use a valid JWT with location_id',
+          found: false 
+        }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
     }
 
-    return await processGhlRequest(finalLocationId, ghlApiKey, fieldKey);
+    return await processGhlRequest(finalLocationId, ghlApiKey, fieldKey, corsHeaders);
 
   } catch (error) {
     console.error('Error in test-ghl-field function:', error)
+    
+    // Return 200 with error details in the body
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        error: error.message,
+        found: false
+      }),
       {
-        status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       },
     )
   }
 })
 
-async function processGhlRequest(locationId: string, ghlApiKey: string, fieldKey: string) {
+async function processGhlRequest(locationId: string, ghlApiKey: string, fieldKey: string, corsHeaders: Record<string, string>) {
   console.log(`Fetching custom values for location ${locationId}`)
   console.log(`Looking for field key: ${fieldKey}`)
 
@@ -128,16 +196,23 @@ async function processGhlRequest(locationId: string, ghlApiKey: string, fieldKey
       const errorText = await response.text()
       console.error(`GHL API error: ${response.status} ${response.statusText}`, errorText)
       
-      // More descriptive error messages based on status codes
-      if (response.status === 401) {
-        throw new Error('GHL API Authentication error: Invalid API key or token expired')
-      } else if (response.status === 403) {
-        throw new Error('GHL API Permission error: Token does not have access to this location')
-      } else if (response.status === 404) {
-        throw new Error(`GHL API error: Location ID ${locationId} not found`)
-      } else {
-        throw new Error(`GHL API error: ${response.statusText} (${response.status})`)
-      }
+      // Return 200 with error details in the body
+      const errorMessage = response.status === 401 ? 'GHL API Authentication error: Invalid API key or token expired'
+        : response.status === 403 ? 'GHL API Permission error: Token does not have access to this location'
+        : response.status === 404 ? `GHL API error: Location ID ${locationId} not found`
+        : `GHL API error: ${response.statusText} (${response.status})`;
+      
+      return new Response(
+        JSON.stringify({ 
+          error: errorMessage,
+          status: response.status,
+          responseText: errorText,
+          found: false 
+        }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
     }
 
     const data = await response.json()
@@ -308,13 +383,15 @@ async function processGhlRequest(locationId: string, ghlApiKey: string, fieldKey
     )
   } catch (error) {
     console.error('Error processing GHL request:', error)
+    
+    // Return 200 with error details in the body
     return new Response(
       JSON.stringify({ 
         error: error.message,
-        location: 'processGhlRequest function'
+        location: 'processGhlRequest function',
+        found: false
       }),
       {
-        status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       },
     )

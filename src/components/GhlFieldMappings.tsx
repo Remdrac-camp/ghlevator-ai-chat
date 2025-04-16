@@ -51,17 +51,13 @@ const CHATBOT_PARAMETERS = [
   { value: 'max_tokens', label: 'Max Tokens' },
 ];
 
-// Fonction améliorée pour extraire l'ID de location ou company à partir du JWT
 const extractGhlIds = (jwt: string): { locationId?: string; companyId?: string; isValid: boolean } => {
   try {
-    // Diviser le JWT en parties
     const parts = jwt.split('.');
     if (parts.length !== 3) return { isValid: false };
     
-    // Décoder la partie payload
     const payload = JSON.parse(atob(parts[1]));
     
-    // Vérifier la présence d'un company_id ou location_id
     const result = {
       locationId: payload.location_id || undefined,
       companyId: payload.company_id || undefined,
@@ -78,9 +74,7 @@ const extractGhlIds = (jwt: string): { locationId?: string; companyId?: string; 
   }
 };
 
-// Helper function to format GHL keys
 const formatGhlKey = (key: string): string => {
-  // If the key doesn't look like a custom_values format, convert it to one
   if (!key.includes('custom_values.') && !key.includes('{{')) {
     return `{{ custom_values.${key.toLowerCase().replace(/\s+/g, '_')} }}`;
   }
@@ -123,7 +117,6 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
       ghl_field_key: string;
       chatbot_parameter: string;
     }) => {
-      // Format the GHL key correctly
       const formattedMapping = {
         ...mapping,
         ghl_field_key: formatGhlKey(mapping.ghl_field_key)
@@ -186,9 +179,7 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
 
   const testGhlValueMutation = useMutation({
     mutationFn: async (ghlFieldKey: string) => {
-      // Get the locationId from localStorage - this is set in Integrations.tsx
       let locationId = localStorage.getItem('ghlLocationId');
-      // Récupérer également la clé API GHL
       const ghlApiKey = localStorage.getItem('ghlApiKey');
       
       console.log('LocationID from localStorage:', locationId);
@@ -203,49 +194,40 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
         throw new Error('No GHL API key found in local storage');
       }
       
-      // Si pas de locationId, essayer d'extraire du token JWT
       if (!locationId && ghlApiKey) {
         console.log('Tentative d\'extraction du locationId depuis le JWT...');
         const extracted = extractGhlIds(ghlApiKey);
         if (extracted.isValid && extracted.locationId) {
           locationId = extracted.locationId;
-          // Stocker pour utilisation future
           localStorage.setItem('ghlLocationId', locationId);
           console.log('LocationID extrait du JWT et stocké:', locationId);
         } else if (extracted.isValid && extracted.companyId) {
-          // Si on n'a que le companyId, on laissera l'Edge Function s'occuper de récupérer un locationId
           console.log('CompanyID trouvé, mais pas de LocationID. CompanyID:', extracted.companyId);
         }
       }
       
-      // Find the specific mapping for this key
       const mapping = mappings?.find(m => m.ghl_field_key === ghlFieldKey);
       if (!mapping) {
         throw new Error('Mapping not found');
       }
       
-      // Get the parameter label that we're testing
       const parameterInfo = CHATBOT_PARAMETERS.find(p => p.value === mapping.chatbot_parameter);
       const parameterLabel = parameterInfo?.label || mapping.chatbot_parameter;
       
-      // Extract the field name from the custom_values format if possible
       let searchKey = ghlFieldKey;
       if (searchKey.includes('custom_values.')) {
         searchKey = searchKey.split('custom_values.')[1].replace('}}', '').trim();
       }
-      // Or use the parameter name if we're searching for OpenAI Key
       if (mapping.chatbot_parameter === 'openai_key') {
         searchKey = 'OpenAI Key';
       } else if (mapping.chatbot_parameter === 'welcome_message') {
-        // For welcome message, we'll try several different terms
         searchKey = 'welcome_message';
       }
       
       console.log(`Testing GHL field: ${searchKey} for parameter: ${parameterLabel}`);
       console.log(`Using locationId: ${locationId}`);
 
-      // Call the test function
-      const { data, error } = await supabase.functions.invoke('test-ghl-field', {
+      const response = await supabase.functions.invoke('test-ghl-field', {
         body: {
           locationId: locationId,
           ghlApiKey: ghlApiKey,
@@ -253,12 +235,15 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
         }
       });
 
-      if (error) throw error;
+      const data = response.data;
       
-      // Save full debug data
+      if (data.error) {
+        console.error('Error from edge function:', data.error);
+        throw new Error(data.error);
+      }
+      
       setDebugData(data);
 
-      // For welcome message testing, let's show a special dialog
       if (mapping.chatbot_parameter === 'welcome_message' && data.potentialWelcomeMatches?.length > 0) {
         setShowWelcomeMessagePreview(true);
       }
@@ -272,7 +257,6 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
       };
     },
     onSuccess: (data) => {
-      // Show a more detailed toast message
       toast({
         title: data.found ? `Valeur trouvée pour "${data.parameterLabel}"` : `Valeur non trouvée pour "${data.parameterLabel}"`,
         description: data.found 
@@ -297,6 +281,13 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
           </Button>
         )
       });
+      
+      setDebugData({
+        error: error.message,
+        found: false
+      });
+      
+      setShowDebugDialog(true);
     },
   });
 
@@ -325,21 +316,17 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
   };
 
   const findWelcomeMessages = async () => {
-    // Get the locationId from localStorage - this is set in Integrations.tsx
     let locationId = localStorage.getItem('ghlLocationId');
     console.log('LocationID from localStorage:', locationId);
 
-    // Get GHL API key from localStorage
     const ghlApiKey = localStorage.getItem('ghlApiKey');
     console.log('GHL API Key available:', !!ghlApiKey);
     
-    // Si pas de locationId, essayer d'extraire du token JWT
     if (!locationId && ghlApiKey) {
       console.log('Tentative d\'extraction du locationId depuis le JWT...');
       const extracted = extractGhlIds(ghlApiKey);
       if (extracted.isValid && extracted.locationId) {
         locationId = extracted.locationId;
-        // Stocker pour utilisation future
         localStorage.setItem('ghlLocationId', locationId);
         console.log('LocationID extrait du JWT et stocké:', locationId);
       } else if (extracted.isValid && extracted.companyId) {
@@ -350,52 +337,69 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
     if (!ghlApiKey) {
       toast({
         title: "API GHL manquante",
-        description: "Aucune clé API GHL trouvée. Veuillez configurer l'intégration GHL d'abord.",
+        description: "Aucune clé API GHL trouvée. Veuillez configurer l'intégration GHL dans la page Intégrations.",
         variant: "destructive",
       });
       return;
     }
     
-    // Call the test function with a special search key for welcome messages
-    const { data, error } = await supabase.functions.invoke('test-ghl-field', {
-      body: {
-        locationId: locationId,  // Peut être undefined, l'edge function essaiera d'extraire le locationId
-        ghlApiKey: ghlApiKey,
-        fieldKey: "welcome_message"
-      }
-    });
+    try {
+      const response = await supabase.functions.invoke('test-ghl-field', {
+        body: {
+          locationId: locationId,
+          ghlApiKey: ghlApiKey,
+          fieldKey: "welcome_message"
+        }
+      });
 
-    if (error) {
+      const data = response.data;
+      
+      if (data.error) {
+        toast({
+          title: "Erreur",
+          description: `Erreur lors de la recherche des messages d'accueil: ${data.error}`,
+          variant: "destructive",
+        });
+        
+        setDebugData(data);
+        setShowDebugDialog(true);
+        return;
+      }
+      
+      setDebugData(data);
+      setShowWelcomeMessagePreview(true);
+      
+      toast({
+        title: "Recherche terminée",
+        description: `${data.potentialWelcomeMatches?.length || 0} messages d'accueil potentiels trouvés.`,
+        action: (
+          <Button variant="outline" size="sm" onClick={() => setShowWelcomeMessagePreview(true)}>
+            Voir les résultats
+          </Button>
+        )
+      });
+    } catch (error: any) {
+      console.error('Error searching for welcome messages:', error);
       toast({
         title: "Erreur",
         description: `Erreur lors de la recherche des messages d'accueil: ${error.message}`,
         variant: "destructive",
       });
-      return;
+      
+      setDebugData({
+        error: error.message,
+        found: false
+      });
+      
+      setShowDebugDialog(true);
     }
-    
-    setDebugData(data);
-    setShowWelcomeMessagePreview(true);
-    
-    toast({
-      title: "Recherche terminée",
-      description: `${data.potentialWelcomeMatches?.length || 0} messages d'accueil potentiels trouvés.`,
-      action: (
-        <Button variant="outline" size="sm" onClick={() => setShowWelcomeMessagePreview(true)}>
-          Voir les résultats
-        </Button>
-      )
-    });
   };
 
-  // Effet pour vérifier les données GHL au chargement
   useEffect(() => {
     const checkGhlConfiguration = async () => {
-      // Vérifier le locationId dans localStorage
       let locationId = localStorage.getItem('ghlLocationId');
       const ghlApiKey = localStorage.getItem('ghlApiKey');
       
-      // Si le locationId n'est pas présent mais qu'on a une clé API
       if (!locationId && ghlApiKey) {
         console.log("Tentative d'extraire le locationId depuis le JWT au chargement...");
         const extracted = extractGhlIds(ghlApiKey);
@@ -407,11 +411,9 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
         }
       }
       
-      // S'assurer que la clé API est toujours disponible mais ne pas afficher le toast si c'est le cas
       if (ghlApiKey) {
         console.log("Clé API GHL disponible au chargement.");
       } else {
-        // Informer l'utilisateur de l'état de la configuration
         toast({
           title: "Configuration GHL incomplète",
           description: "Clé API GHL non trouvée. Configurez l'intégration GHL dans la page Intégrations.",
@@ -543,7 +545,6 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
         </CardContent>
       </Card>
 
-      {/* Debug dialog */}
       <Dialog open={showDebugDialog} onOpenChange={setShowDebugDialog}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-auto">
           <DialogHeader>
@@ -731,7 +732,6 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
         </DialogContent>
       </Dialog>
 
-      {/* Welcome Message Preview Dialog */}
       <Dialog open={showWelcomeMessagePreview} onOpenChange={setShowWelcomeMessagePreview}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-auto">
           <DialogHeader>
