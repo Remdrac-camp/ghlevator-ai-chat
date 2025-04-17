@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
 const corsHeaders = {
@@ -19,56 +20,7 @@ serve(async (req) => {
     console.log('Field Key:', fieldKey)
     console.log('JWT Token Length:', ghlApiKey ? ghlApiKey.length : 'No token')
 
-    const getGhlApiHeaders = (apiKey: string) => {
-      if (apiKey && apiKey.split('.').length === 3) {
-        return {
-          'Authorization': `Bearer ${apiKey}`,
-          'Version': '2021-07-28',
-          'Accept': 'application/json',
-        };
-      } 
-      else if (apiKey) {
-        return {
-          'Authorization': apiKey,
-          'Version': '2021-07-28',
-          'Accept': 'application/json',
-        };
-      }
-      
-      return {
-        'Accept': 'application/json',
-      };
-    };
-
-    const extractJWTDetails = (jwt: string) => {
-      try {
-        const parts = jwt.split('.');
-        if (parts.length !== 3) {
-          console.error('Invalid JWT format');
-          return { error: 'Invalid JWT format' };
-        }
-
-        const payload = JSON.parse(atob(parts[1]));
-        console.log('JWT Payload Details:', {
-          company_id: payload.company_id,
-          location_id: payload.location_id,
-          sub: payload.sub
-        });
-
-        return {
-          companyId: payload.company_id,
-          locationId: payload.location_id,
-          sub: payload.sub
-        };
-      } catch (error) {
-        console.error('JWT Decoding Error:', error);
-        return { error: 'Could not decode JWT' };
-      }
-    };
-
-    const jwtDetails = extractJWTDetails(ghlApiKey);
-    console.log('Extracted JWT Details:', jwtDetails);
-
+    // Validate API key
     if (!ghlApiKey) {
       return new Response(
         JSON.stringify({ 
@@ -83,200 +35,31 @@ serve(async (req) => {
       );
     }
 
+    // Extract JWT details to determine if it's a company or location token
+    const jwtDetails = extractJWTDetails(ghlApiKey);
+    console.log('Extracted JWT Details:', jwtDetails);
+
     let finalLocationId = locationId;
     
+    // If no location ID provided but we have company ID in JWT, try to get first location
     if (!finalLocationId && jwtDetails.companyId) {
       console.log(`Attempting to fetch locations for company: ${jwtDetails.companyId}`);
-      
-      try {
-        console.log('Trying API key directly...');
-        const directHeaders = {
-          'Authorization': ghlApiKey,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        };
-        
-        const directResponse = await fetch(
-          `https://rest.gohighlevel.com/v1/locations/`, 
-          {
-            headers: directHeaders,
-            method: 'GET'
-          }
-        );
-
-        console.log('Direct API Response:', {
-          status: directResponse.status,
-          statusText: directResponse.statusText
-        });
-
-        if (directResponse.ok) {
-          const locationsData = await directResponse.json();
-          console.log('Locations Data from direct API:', locationsData);
-          
-          if (locationsData.locations && locationsData.locations.length > 0) {
-            finalLocationId = locationsData.locations[0].id;
-            console.log(`Using first location from direct API: ${finalLocationId}`);
-          }
-        } else {
-          const errorText = await directResponse.text();
-          console.log('Direct API Error:', errorText);
-        }
-      } catch (fetchError) {
-        console.log('Direct API Fetch Exception:', fetchError);
-      }
-      
-      try {
-        console.log('Trying modern location listing API...');
-        const headers = getGhlApiHeaders(ghlApiKey);
-        console.log('Using headers:', headers);
-        
-        const locationsResponse = await fetch(
-          `https://api.higherlevel.com/companies/${jwtDetails.companyId}/locations`, 
-          {
-            headers,
-            method: 'GET'
-          }
-        );
-
-        console.log('Modern API Response:', {
-          status: locationsResponse.status,
-          statusText: locationsResponse.statusText
-        });
-
-        if (locationsResponse.ok) {
-          const locationsData = await locationsResponse.json();
-          console.log('Locations Data from modern API:', locationsData);
-          
-          if (locationsData.data && locationsData.data.length > 0) {
-            finalLocationId = locationsData.data[0].id;
-            console.log(`Using first location from modern API: ${finalLocationId}`);
-          }
-        } else {
-          const errorText = await locationsResponse.text();
-          console.log('Modern API Error:', errorText);
-        }
-      } catch (fetchError) {
-        console.log('Modern API Fetch Exception:', fetchError);
-      }
-
-      try {
-        console.log('Trying location/list endpoint...');
-        const headers = getGhlApiHeaders(ghlApiKey);
-        
-        const listResponse = await fetch(
-          `https://api.gohighlevel.com/oauth/location/list`, 
-          {
-            headers,
-            method: 'GET'
-          }
-        );
-
-        console.log('List endpoint Response:', {
-          status: listResponse.status,
-          statusText: listResponse.statusText
-        });
-
-        if (listResponse.ok) {
-          const locationsData = await listResponse.json();
-          console.log('Locations Data from list endpoint:', locationsData);
-          
-          if (locationsData.locations && locationsData.locations.length > 0) {
-            finalLocationId = locationsData.locations[0].id;
-            console.log(`Using first location from list endpoint: ${finalLocationId}`);
-          }
-        } else {
-          const errorText = await listResponse.text();
-          console.log('List endpoint Error:', errorText);
-        }
-      } catch (fetchError) {
-        console.log('List endpoint Exception:', fetchError);
-      }
-
-      try {
-        console.log('Trying legacy location listing API...');
-        const headers = getGhlApiHeaders(ghlApiKey);
-        
-        const legacyLocationsResponse = await fetch(
-          `https://services.leadconnectorhq.com/locations/search`, 
-          {
-            headers,
-            method: 'POST',
-            body: JSON.stringify({
-              companyId: jwtDetails.companyId,
-              limit: 10  // Get a few locations
-            })
-          }
-        );
-
-        console.log('Legacy API Response:', {
-          status: legacyLocationsResponse.status,
-          statusText: legacyLocationsResponse.statusText
-        });
-
-        if (legacyLocationsResponse.ok) {
-          const locationsData = await legacyLocationsResponse.json();
-          console.log('Locations Data from legacy API:', locationsData);
-          
-          if (locationsData.locations && locationsData.locations.length > 0) {
-            finalLocationId = locationsData.locations[0].id;
-            console.log(`Using first location from legacy API: ${finalLocationId}`);
-          }
-        } else {
-          const errorText = await legacyLocationsResponse.text();
-          console.log('Legacy API Error:', errorText);
-        }
-      } catch (fetchError) {
-        console.log('Legacy API Fetch Exception:', fetchError);
-      }
-      
-      try {
-        console.log('Trying alternative location endpoint...');
-        const headers = getGhlApiHeaders(ghlApiKey);
-        
-        const altLocationsResponse = await fetch(
-          `https://services.leadconnectorhq.com/company/location/list`, 
-          {
-            headers,
-            method: 'POST',
-            body: JSON.stringify({
-              companyId: jwtDetails.companyId,
-              limit: 10
-            })
-          }
-        );
-
-        console.log('Alternative API Response:', {
-          status: altLocationsResponse.status,
-          statusText: altLocationsResponse.statusText
-        });
-
-        if (altLocationsResponse.ok) {
-          const locationsData = await altLocationsResponse.json();
-          console.log('Locations Data from alternative API:', locationsData);
-          
-          if (locationsData.locations && locationsData.locations.length > 0) {
-            finalLocationId = locationsData.locations[0].id;
-            console.log(`Using first location from alternative API: ${finalLocationId}`);
-          }
-        } else {
-          const errorText = await altLocationsResponse.text();
-          console.log('Alternative API Error:', errorText);
-        }
-      } catch (fetchError) {
-        console.log('Alternative API Fetch Exception:', fetchError);
-      }
+      finalLocationId = await fetchFirstLocationId(ghlApiKey, jwtDetails.companyId);
     }
 
+    // If we found a location ID from JWT directly, use that
     if (!finalLocationId && jwtDetails.locationId) {
       console.log(`Using locationId from JWT: ${jwtDetails.locationId}`);
       finalLocationId = jwtDetails.locationId;
     }
 
+    // As last resort try to use sub value as location ID
     if (!finalLocationId && jwtDetails.sub) {
       console.log(`Trying to use sub value as location ID: ${jwtDetails.sub}`);
       finalLocationId = jwtDetails.sub;
     }
 
+    // If we still don't have a location ID but have a company ID, try company level
     if (!finalLocationId) {
       console.log(`No location ID found, trying company-level customValues endpoint`);
 
@@ -292,7 +75,7 @@ serve(async (req) => {
         }),
         { 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200 // Using 200 instead of 400 to be handled by the frontend
+          status: 200
         }
       );
     }
@@ -309,13 +92,58 @@ serve(async (req) => {
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200 // Using 200 instead of 500 to be handled by the frontend
+        status: 200
       }
     );
   }
 })
 
-async function processCompanyGhlRequest(companyId: string, ghlApiKey: string, fieldKey: string, corsHeaders: Record<string, string>) {
+async function fetchFirstLocationId(ghlApiKey, companyId) {
+  console.log(`Trying to fetch first location for company ${companyId}`);
+  
+  try {
+    // Using the v2 locations API endpoint as per documentation
+    const headers = getGhlApiHeaders(ghlApiKey);
+    console.log('Using headers for locations request:', headers);
+    
+    const locationsResponse = await fetch(
+      `https://services.leadconnectorhq.com/locations/search`, 
+      {
+        headers,
+        method: 'POST',
+        body: JSON.stringify({
+          companyId: companyId,
+          limit: 1  // Just get the first location
+        })
+      }
+    );
+
+    console.log('Locations API Response:', {
+      status: locationsResponse.status,
+      statusText: locationsResponse.statusText
+    });
+
+    if (locationsResponse.ok) {
+      const locationsData = await locationsResponse.json();
+      console.log('Locations Data:', locationsData);
+      
+      if (locationsData.locations && locationsData.locations.length > 0) {
+        const firstLocationId = locationsData.locations[0].id;
+        console.log(`Found first location ID: ${firstLocationId}`);
+        return firstLocationId;
+      }
+    } else {
+      const errorText = await locationsResponse.text();
+      console.error('Locations API Error:', errorText);
+    }
+  } catch (error) {
+    console.error('Error fetching location ID:', error);
+  }
+  
+  return null;
+}
+
+async function processCompanyGhlRequest(companyId, ghlApiKey, fieldKey, corsHeaders) {
   console.log(`Trying company-level custom values for company ${companyId}`)
   console.log(`Looking for field key: ${fieldKey}`)
   
@@ -323,57 +151,40 @@ async function processCompanyGhlRequest(companyId: string, ghlApiKey: string, fi
   console.log('Using headers for company request:', headers);
 
   try {
-    const endpoints = [
-      `https://api.higherlevel.com/companies/${companyId}/custom-values`,
-      `https://api.gohighlevel.com/oauth/company/${companyId}/customValues`,
-      `https://services.leadconnectorhq.com/companies/${companyId}/customValues`,
-      `https://rest.gohighlevel.com/v1/custom-values/`
-    ];
+    // Primary endpoint as per updated documentation
+    const endpoint = `https://services.leadconnectorhq.com/companies/${companyId}/customValues`;
+    console.log(`Trying endpoint: ${endpoint}`);
     
-    let responseData = null;
-    
-    for (const endpoint of endpoints) {
-      console.log(`Trying endpoint: ${endpoint}`);
-      
-      try {
-        const response = await fetch(endpoint, {
-          headers,
-          method: 'GET'
-        });
-  
-        console.log(`Response from ${endpoint}:`, {
-          status: response.status,
-          statusText: response.statusText
-        });
-  
-        if (response.ok) {
-          responseData = await response.json();
-          console.log(`Success from ${endpoint}! Got data:`, responseData);
-          break;
-        } else {
-          const errorText = await response.text();
-          console.error(`Error from ${endpoint}:`, errorText);
-        }
-      } catch (fetchError) {
-        console.error(`Exception from ${endpoint}:`, fetchError);
-      }
-    }
-    
-    if (!responseData) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Failed to retrieve custom values from any GHL API endpoint',
-          found: false,
-          details: 'Tried multiple API endpoints but none returned valid data. Your API key might not have sufficient permissions.'
-        }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200
-        }
-      );
-    }
+    const response = await fetch(endpoint, {
+      headers,
+      method: 'GET'
+    });
 
-    return processCustomValuesResponse(responseData, fieldKey, corsHeaders);
+    console.log(`Response from ${endpoint}:`, {
+      status: response.status,
+      statusText: response.statusText
+    });
+
+    if (response.ok) {
+      const responseData = await response.json();
+      console.log(`Success from ${endpoint}! Got data:`, responseData);
+      return processCustomValuesResponse(responseData, fieldKey, corsHeaders);
+    } else {
+      const errorText = await response.text();
+      console.error(`Error from ${endpoint}:`, errorText);
+    }
+    
+    return new Response(
+      JSON.stringify({ 
+        error: 'Failed to retrieve custom values from GHL API',
+        found: false,
+        details: 'The API endpoint returned an error. Your API key might not have sufficient permissions.'
+      }),
+      { 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200
+      }
+    );
   } catch (error) {
     console.error('Error processing Company GHL request:', error);
     
@@ -391,7 +202,7 @@ async function processCompanyGhlRequest(companyId: string, ghlApiKey: string, fi
   }
 }
 
-async function processGhlRequest(locationId: string, ghlApiKey: string, fieldKey: string, corsHeaders: Record<string, string>) {
+async function processGhlRequest(locationId, ghlApiKey, fieldKey, corsHeaders) {
   console.log(`Fetching custom values for location ${locationId}`)
   console.log(`Looking for field key: ${fieldKey}`)
   
@@ -399,90 +210,40 @@ async function processGhlRequest(locationId: string, ghlApiKey: string, fieldKey
   console.log('Using headers for location request:', headers);
 
   try {
-    const endpoints = [
-      `https://services.leadconnectorhq.com/locations/${locationId}/customValues`,
-      `https://api.higherlevel.com/locations/${locationId}/custom-values`,
-      `https://api.gohighlevel.com/oauth/location/${locationId}/customValues`,
-      `https://rest.gohighlevel.com/v1/custom-values/`
-    ];
+    // Primary endpoint as per updated documentation
+    const endpoint = `https://services.leadconnectorhq.com/locations/${locationId}/customValues`;
+    console.log(`Trying endpoint: ${endpoint}`);
     
-    let responseData = null;
+    const response = await fetch(endpoint, {
+      headers,
+      method: 'GET'
+    });
+
+    console.log(`Response from ${endpoint}:`, {
+      status: response.status,
+      statusText: response.statusText
+    });
+
+    if (response.ok) {
+      const responseData = await response.json();
+      console.log(`Success from ${endpoint}! Got data:`, responseData);
+      return processCustomValuesResponse(responseData, fieldKey, corsHeaders);
+    } else {
+      const errorText = await response.text();
+      console.error(`Error from ${endpoint}:`, errorText);
+    }
     
-    for (const endpoint of endpoints) {
-      console.log(`Trying endpoint: ${endpoint}`);
-      
-      try {
-        const response = await fetch(endpoint, {
-          headers,
-          method: 'GET'
-        });
-  
-        console.log(`Response from ${endpoint}:`, {
-          status: response.status,
-          statusText: response.statusText
-        });
-  
-        if (response.ok) {
-          responseData = await response.json();
-          console.log(`Success from ${endpoint}! Got data:`, responseData);
-          break;
-        } else {
-          const errorText = await response.text();
-          console.error(`Error from ${endpoint}:`, errorText);
-        }
-      } catch (fetchError) {
-        console.error(`Exception from ${endpoint}:`, fetchError);
+    return new Response(
+      JSON.stringify({ 
+        error: 'Failed to retrieve custom values from GHL API',
+        found: false,
+        details: 'The API endpoint returned an error. This could be due to an expired token or insufficient permissions.'
+      }),
+      { 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200
       }
-    }
-    
-    if (!responseData) {
-      try {
-        console.log('Trying direct API approach (without Bearer prefix)...');
-        const directHeaders = {
-          'Authorization': ghlApiKey,
-          'Content-Type': 'application/json',
-        };
-        
-        const directResponse = await fetch(
-          `https://rest.gohighlevel.com/v1/custom-values/`, 
-          {
-            headers: directHeaders,
-            method: 'GET'
-          }
-        );
-
-        console.log('Direct Custom Values API Response:', {
-          status: directResponse.status,
-          statusText: directResponse.statusText
-        });
-
-        if (directResponse.ok) {
-          responseData = await directResponse.json();
-          console.log('Custom Values from direct API:', responseData);
-        } else {
-          const errorText = await directResponse.text();
-          console.log('Direct Custom Values API Error:', errorText);
-        }
-      } catch (fetchError) {
-        console.log('Direct Custom Values API Exception:', fetchError);
-      }
-    }
-    
-    if (!responseData) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Failed to retrieve custom values from any GHL API endpoint',
-          found: false,
-          details: 'Tried multiple API endpoints but none returned valid data. This could be due to an expired token or insufficient permissions.'
-        }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200
-        }
-      );
-    }
-
-    return processCustomValuesResponse(responseData, fieldKey, corsHeaders);
+    );
   } catch (error) {
     console.error('Error processing GHL request:', error);
     
@@ -499,28 +260,59 @@ async function processGhlRequest(locationId: string, ghlApiKey: string, fieldKey
   }
 }
 
-function getGhlApiHeaders(apiKey: string) {
+function getGhlApiHeaders(apiKey) {
   if (apiKey && apiKey.split('.').length === 3) {
+    // It's a JWT token
     return {
       'Authorization': `Bearer ${apiKey}`,
       'Version': '2021-07-28',
       'Accept': 'application/json',
+      'Content-Type': 'application/json'
     };
   } 
   else if (apiKey) {
+    // It's a regular API key
     return {
       'Authorization': apiKey,
       'Version': '2021-07-28',
       'Accept': 'application/json',
+      'Content-Type': 'application/json'
     };
   }
   
   return {
     'Accept': 'application/json',
+    'Content-Type': 'application/json'
   };
 }
 
-function processCustomValuesResponse(data: any, fieldKey: string, corsHeaders: Record<string, string>) {
+function extractJWTDetails(jwt) {
+  try {
+    const parts = jwt.split('.');
+    if (parts.length !== 3) {
+      console.error('Invalid JWT format');
+      return { error: 'Invalid JWT format' };
+    }
+
+    const payload = JSON.parse(atob(parts[1]));
+    console.log('JWT Payload Details:', {
+      company_id: payload.company_id,
+      location_id: payload.location_id,
+      sub: payload.sub
+    });
+
+    return {
+      companyId: payload.company_id,
+      locationId: payload.location_id,
+      sub: payload.sub
+    };
+  } catch (error) {
+    console.error('JWT Decoding Error:', error);
+    return { error: 'Could not decode JWT' };
+  }
+}
+
+function processCustomValuesResponse(data, fieldKey, corsHeaders) {
   const customValues = data.customValues || data.custom_values || [];
   
   if (!customValues || customValues.length === 0) {
@@ -594,10 +386,10 @@ function processCustomValuesResponse(data: any, fieldKey: string, corsHeaders: R
   console.log('Searching for terms:', searchTerms);
 
   const strategies = [
-    (cv: any) => searchTerms.some(term => cv.key?.toLowerCase() === term),
-    (cv: any) => cv.name && searchTerms.some(term => cv.name.toLowerCase() === term),
-    (cv: any) => searchTerms.some(term => cv.key?.toLowerCase().includes(term)),
-    (cv: any) => cv.name && searchTerms.some(term => cv.name.toLowerCase().includes(term))
+    (cv) => searchTerms.some(term => cv.key?.toLowerCase() === term),
+    (cv) => cv.name && searchTerms.some(term => cv.name.toLowerCase() === term),
+    (cv) => searchTerms.some(term => cv.key?.toLowerCase().includes(term)),
+    (cv) => cv.name && searchTerms.some(term => cv.name.toLowerCase().includes(term))
   ];
 
   let customValue = null;
@@ -611,7 +403,7 @@ function processCustomValuesResponse(data: any, fieldKey: string, corsHeaders: R
   }
 
   if (!customValue && fieldKey.toLowerCase().includes('openai')) {
-    customValue = customValues.find((cv: any) => 
+    customValue = customValues.find((cv) => 
       cv.name?.toLowerCase().includes('openai') || 
       cv.key?.toLowerCase().includes('openai')
     );
@@ -623,7 +415,7 @@ function processCustomValuesResponse(data: any, fieldKey: string, corsHeaders: R
   if (!customValue && (fieldKey.toLowerCase().includes('welcome') || 
                        fieldKey.toLowerCase().includes('message') || 
                        fieldKey.toLowerCase().includes('intro'))) {
-    customValue = customValues.find((cv: any) => 
+    customValue = customValues.find((cv) => 
       welcomeTerms.some(term => 
         cv.key?.toLowerCase().includes(term) || 
         (cv.name && cv.name.toLowerCase().includes(term))
@@ -634,7 +426,7 @@ function processCustomValuesResponse(data: any, fieldKey: string, corsHeaders: R
     }
   }
   
-  const potentialWelcomeMatches = customValues.filter((cv: any) => 
+  const potentialWelcomeMatches = customValues.filter((cv) => 
     welcomeTerms.some(term => 
       cv.key?.toLowerCase().includes(term) || 
       (cv.name && cv.name.toLowerCase().includes(term))
@@ -643,7 +435,7 @@ function processCustomValuesResponse(data: any, fieldKey: string, corsHeaders: R
 
   console.log(`Found ${potentialWelcomeMatches.length} potential welcome message matches`);
 
-  const textContentFields = customValues.filter((cv: any) => 
+  const textContentFields = customValues.filter((cv) => 
     cv.value && 
     typeof cv.value === 'string' && 
     cv.value.length > 15 && 
@@ -659,17 +451,17 @@ function processCustomValuesResponse(data: any, fieldKey: string, corsHeaders: R
       name: customValue?.name || null,
       found: !!customValue,
       searchTerms: searchTerms,
-      potentialWelcomeMatches: potentialWelcomeMatches.map((cv: any) => ({
+      potentialWelcomeMatches: potentialWelcomeMatches.map((cv) => ({
         key: cv.key,
         name: cv.name,
         valuePreview: cv.value ? (cv.value.length > 50 ? cv.value.substring(0, 50) + '...' : cv.value) : null
       })),
-      textContentFields: textContentFields.map((cv: any) => ({
+      textContentFields: textContentFields.map((cv) => ({
         key: cv.key,
         name: cv.name,
         valuePreview: cv.value ? (cv.value.length > 50 ? cv.value.substring(0, 50) + '...' : cv.value) : null
       })),
-      allKeys: customValues.map((cv: any) => ({ 
+      allKeys: customValues.map((cv) => ({ 
         key: cv.key, 
         name: cv.name,
         valuePreview: cv.value ? (cv.value.length > 20 ? cv.value.substring(0, 20) + '...' : cv.value) : null
