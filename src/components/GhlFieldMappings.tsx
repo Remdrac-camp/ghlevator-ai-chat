@@ -28,6 +28,9 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import { useGhlMappings } from '@/hooks/useGhlMappings';
+import { FieldMappingItem } from '@/components/ghl/FieldMappingItem';
+import { GhlFieldMapping } from '@/types/ghl';
 
 interface GhlFieldMapping {
   id: string;
@@ -90,25 +93,22 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
     chatbot_id: string;
     field_type: 'custom_value' | 'custom_field';
     ghl_field_key: string;
-    chatbot_parameter?: 'openai_key' | 'system_prompt' | 'welcome_message' | 'temperature' | 'max_tokens';
+    chatbot_parameter: 'openai_key' | 'system_prompt' | 'welcome_message' | 'temperature' | 'max_tokens';
   }>({
     chatbot_id: chatbotId,
     field_type: 'custom_value',
     ghl_field_key: '',
+    chatbot_parameter: 'openai_key',
   });
 
-  const { data: mappings, refetch } = useQuery({
-    queryKey: ['ghl-mappings', chatbotId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('ghl_field_mappings')
-        .select('*')
-        .eq('chatbot_id', chatbotId);
-
-      if (error) throw error;
-      return data as GhlFieldMapping[];
-    },
-  });
+  const {
+    mappings,
+    isLoading,
+    createMapping,
+    updateMapping,
+    deleteMapping,
+    isCreating,
+  } = useGhlMappings(chatbotId);
 
   const addMappingMutation = useMutation({
     mutationFn: async (mapping: {
@@ -140,38 +140,14 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
       setNewMapping({ 
         chatbot_id: chatbotId, 
         field_type: 'custom_value',
-        ghl_field_key: '' 
+        ghl_field_key: '',
+        chatbot_parameter: 'openai_key',
       });
     },
     onError: (error) => {
       toast({
         title: "Erreur",
         description: `Erreur lors de l'ajout du mapping: ${error.message}`,
-        variant: "destructive",
-      });
-    },
-  });
-
-  const deleteMappingMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('ghl_field_mappings')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast({
-        title: "Mapping supprimé",
-        description: "Le mapping GHL a été supprimé avec succès.",
-      });
-      refetch();
-    },
-    onError: (error) => {
-      toast({
-        title: "Erreur",
-        description: `Erreur lors de la suppression du mapping: ${error.message}`,
         variant: "destructive",
       });
     },
@@ -292,23 +268,12 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
   });
 
   const handleAddMapping = () => {
-    if (!newMapping.ghl_field_key || !newMapping.chatbot_parameter) {
-      toast({
-        title: "Erreur",
-        description: "Veuillez remplir tous les champs obligatoires",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    const mappingToAdd = {
-      chatbot_id: newMapping.chatbot_id,
-      field_type: newMapping.field_type,
-      ghl_field_key: newMapping.ghl_field_key,
-      chatbot_parameter: newMapping.chatbot_parameter
-    };
-    
-    addMappingMutation.mutate(mappingToAdd);
+    createMapping({
+      chatbot_id: chatbotId,
+      field_type: 'custom_value',
+      ghl_field_key: '',
+      chatbot_parameter: 'openai_key',
+    });
   };
 
   const handleTestMapping = (ghlFieldKey: string) => {
@@ -425,122 +390,33 @@ export const GhlFieldMappings: React.FC<GhlFieldMappingsProps> = ({ chatbotId })
     checkGhlConfiguration();
   }, [toast]);
 
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
+
   return (
     <>
       <Card>
         <CardHeader>
-          <CardTitle>Mappings GoHighLevel</CardTitle>
+          <CardTitle>GHL Field Mappings</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-4 border-b pb-6">
-            <div className="space-y-2">
-              <Label>Type de champ GHL</Label>
-              <Select
-                value={newMapping.field_type}
-                onValueChange={(value: 'custom_value' | 'custom_field') => 
-                  setNewMapping({ ...newMapping, field_type: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Sélectionner le type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="custom_value">Custom Value</SelectItem>
-                  <SelectItem value="custom_field">Custom Field</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Clé GHL</Label>
-              <div className="space-y-1">
-                <Input 
-                  placeholder="Ex: openai_key ou {{ custom_values.openai_key }}"
-                  value={newMapping.ghl_field_key || ''}
-                  onChange={(e) => setNewMapping({ ...newMapping, ghl_field_key: e.target.value })}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Pour OpenAI API Key, utilisez simplement "OpenAI Key" ou "openai_key"
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Paramètre du chatbot</Label>
-              <Select
-                value={newMapping.chatbot_parameter}
-                onValueChange={(value: GhlFieldMapping['chatbot_parameter']) => 
-                  setNewMapping({ ...newMapping, chatbot_parameter: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Sélectionner le paramètre" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CHATBOT_PARAMETERS.map((param) => (
-                    <SelectItem key={param.value} value={param.value}>
-                      {param.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex gap-2">
-              <Button onClick={handleAddMapping} disabled={addMappingMutation.isPending} className="flex-1">
-                Ajouter le mapping
-              </Button>
-              <Button 
-                variant="secondary" 
-                onClick={findWelcomeMessages}
-                disabled={testGhlValueMutation.isPending}
-              >
-                <Search className="h-4 w-4 mr-1" />
-                Rechercher Welcome Messages
-              </Button>
-            </div>
-          </div>
-
+        <CardContent>
           <div className="space-y-4">
-            <h3 className="font-medium">Mappings existants</h3>
-            {mappings?.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">
-                <p>Aucun mapping configuré</p>
-                <p className="text-sm mt-1">Créez un nouveau mapping en utilisant le formulaire ci-dessus</p>
-              </div>
-            ) : (
-              mappings?.map((mapping) => (
-                <div key={mapping.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                  <div>
-                    <p className="font-medium">{mapping.ghl_field_key}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {mapping.field_type} → {
-                        CHATBOT_PARAMETERS.find(p => p.value === mapping.chatbot_parameter)?.label
-                      }
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleTestMapping(mapping.ghl_field_key)}
-                      disabled={testGhlValueMutation.isPending}
-                    >
-                      <TestTube className="h-4 w-4 mr-1" />
-                      Tester
-                    </Button>
-                    <Button 
-                      variant="destructive" 
-                      size="sm"
-                      onClick={() => deleteMappingMutation.mutate(mapping.id)}
-                      disabled={deleteMappingMutation.isPending}
-                    >
-                      Supprimer
-                    </Button>
-                  </div>
-                </div>
-              ))
-            )}
+            {mappings?.map((mapping) => (
+              <FieldMappingItem
+                key={mapping.id}
+                mapping={mapping}
+                onUpdate={updateMapping}
+                onDelete={deleteMapping}
+                onTest={handleTestMapping}
+              />
+            ))}
+            <Button
+              onClick={handleAddMapping}
+              disabled={isCreating}
+            >
+              Add Mapping
+            </Button>
           </div>
         </CardContent>
       </Card>
