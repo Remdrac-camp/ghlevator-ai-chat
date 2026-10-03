@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+</head>
+<body>
+<title>Notte Bianca Valletta</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Notte Bianca">
+<meta name="theme-color" content="#0b1220">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+/* Layout: full-screen night map of the Valletta peninsula, header floating on top, step sheet docked at the bottom. */
+:root {
+  --sea: #0b1220;
+  --sea-line: #16223a;
+  --land: #262632;
+  --land-far: #1c1d27;
+  --street: #3a3946;
+  --block: #2f2f3c;
+  --stone: #e8b765;      /* Maltese limestone under night lighting */
+  --stone-soft: #e8b76533;
+  --ink: #f2ebdd;
+  --muted: #a49d91;
+  --panel: #141a29;
+  --panel-line: #263049;
+  --done: #86c3a2;
+  --on-stone: #1b1408;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--sea); color: var(--ink);
+  font-family: var(--body); font-size: 15px; overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+#app { position: relative; height: 100%; overflow: hidden; }
+#map { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; display: block; }
+#map.dragging { cursor: grabbing; }
+
+.water-label { fill: #5e7499; font-family: var(--display); font-weight: 600; letter-spacing: .18em; text-transform: uppercase; }
+.land-label { fill: #77737f; font-family: var(--display); font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+.street-label { fill: #8d8898; font-family: var(--body); }
+.lm-label { fill: #b9b2a6; font-family: var(--body); font-size: 11.5px; }
+.lm-dot { fill: #8d8898; }
+.route { fill: none; stroke: var(--stone); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 2 7; vector-effect: non-scaling-stroke; opacity: .55; }
+.route.active { opacity: 1; stroke-width: 4.5; stroke-dasharray: 1 8; animation: march 1s linear infinite; }
+@keyframes march { to { stroke-dashoffset: -9; } }
+.marker { cursor: pointer; }
+.marker .halo { fill: var(--stone-soft); }
+.marker .pin { fill: var(--stone); stroke: var(--sea); stroke-width: 2.5; }
+.marker .num { fill: var(--on-stone); font-family: var(--display); font-weight: 800; font-size: 15px; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.marker .tag { fill: var(--ink); font-family: var(--body); font-weight: 700; font-size: 12.5px; paint-order: stroke; stroke: var(--sea); stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
+.marker.done .pin { fill: var(--done); }
+.marker.done .halo { fill: #86c3a222; }
+.marker:not(.sel) .halo { opacity: 0; }
+.marker.sel .halo { animation: pulse 2s ease-out infinite; transform-origin: 0 0; }
+@keyframes pulse { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(1.5); opacity: 0; } }
+
+header {
+  position: absolute; top: 0; left: 0; right: 0;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 22px;
+  background: linear-gradient(var(--sea) 30%, transparent);
+  pointer-events: none; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+}
+header .eyebrow { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--stone); font-weight: 700; }
+header h1 { margin: 2px 0 0; font-family: var(--display); font-weight: 800; font-size: 25px; line-height: 1.05; letter-spacing: -.01em; text-wrap: balance; }
+header .progress { pointer-events: auto; font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); text-align: right; white-space: nowrap; padding-top: 4px; }
+header .progress b { color: var(--ink); font-size: 18px; font-family: var(--display); }
+
+.zoom { position: absolute; right: 16px; display: flex; flex-direction: column; gap: 8px; }
+.icon-btn {
+  width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--panel-line);
+  background: var(--panel); color: var(--ink); font-size: 22px; line-height: 1; font-family: var(--body);
+  display: grid; place-items: center; cursor: pointer; padding: 0;
+}
+.icon-btn:active { background: #1e2638; }
+.icon-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+#sheet {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: var(--panel); border-top: 1px solid var(--panel-line);
+  border-radius: 20px 20px 0 0;
+  padding: 14px 16px calc(env(safe-area-inset-bottom, 0px) + 14px);
+  display: flex; flex-direction: column; gap: 12px;
+  box-shadow: 0 -12px 40px #00000066;
+}
+.chips { display: flex; gap: 8px; }
+.chip {
+  flex: 1 1 0; min-width: 0; height: 38px; border-radius: 10px; border: 1px solid var(--panel-line);
+  background: transparent; color: var(--muted); font-family: var(--display); font-weight: 800; font-size: 16px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 4px; font-variant-numeric: tabular-nums;
+}
+.chip.done { color: var(--done); border-color: #86c3a255; }
+.chip.sel { background: var(--stone); border-color: var(--stone); color: var(--on-stone); }
+.chip.sel.done { background: var(--done); border-color: var(--done); }
+.chip .tick { font-size: 13px; }
+
+.card { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.card .step { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--stone); font-weight: 700; }
+.card h2 { margin: 0; font-family: var(--display); font-weight: 800; font-size: 21px; line-height: 1.15; text-wrap: balance; }
+.card .fr { color: var(--muted); font-size: 14px; }
+.card .addr { font-size: 14.5px; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.card .addr span { user-select: all; -webkit-user-select: all; }
+.card .leg { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btn {
+  min-height: 46px; border-radius: 12px; border: 1px solid var(--panel-line); background: transparent; color: var(--ink);
+  font-family: var(--body); font-weight: 700; font-size: 15px; cursor: pointer; text-decoration: none;
+  display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 12px; text-align: center;
+}
+.btn.primary { background: var(--stone); color: var(--on-stone); border-color: var(--stone); grid-column: 1 / -1; }
+.btn.is-done { color: var(--done); border-color: #86c3a266; }
+.btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+.foot a { color: var(--stone); text-decoration: none; font-weight: 700; }
+.foot .note { color: var(--muted); }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--stone); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .route.active, .marker.sel .halo { animation: none; }
+  .marker.sel .halo { opacity: .8; }
+}
+</style>
+
+<div id="app">
+  <svg id="map" aria-label="Carte de La Valette avec les cinq étapes"></svg>
+
+  <header>
+    <div>
+      <div class="eyebrow">Notte Bianca · 3 oct. 2026</div>
+      <h1>La Valette, en 5 étapes</h1>
+    </div>
+    <div class="progress"><b id="doneCount">0</b>/5<br>visitées</div>
+  </header>
+
+  <div class="zoom" id="zoom">
+    <button class="icon-btn" id="zin" aria-label="Zoomer">+</button>
+    <button class="icon-btn" id="zout" aria-label="Dézoomer">−</button>
+    <button class="icon-btn" id="zfit" aria-label="Voir tout le parcours">
+      <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
+  </div>
+
+  <section id="sheet" aria-live="polite">
+    <div class="chips" id="chips"></div>
+    <div class="card">
+      <div class="step" id="cStep"></div>
+      <h2 id="cName"></h2>
+      <div class="fr" id="cFr"></div>
+      <div class="addr"><span id="cAddr"></span></div>
+      <div class="leg" id="cLeg"></div>
+    </div>
+    <div class="actions">
+      <a class="btn primary" id="go" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24"><path d="M3 11l18-8-8 18-2-8z"/></svg>
+        Y aller à pied
+      </a>
+      <button class="btn" id="visit"></button>
+      <button class="btn" id="next"></button>
+    </div>
+    <div class="foot">
+      <a id="all" target="_blank" rel="noopener">Tout le parcours dans Google Maps ↗</a>
+      <span class="note">Plan schématique, distances approx.</span>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var NS = "http://www.w3.org/2000/svg";
+  // Local frame: u runs along Republic Street (City Gate → Fort St Elmo), v points north-west.
+  // Republic Street is turned about 36° from east, so the map stays north-up.
+  var A = 36 * Math.PI / 180, C = Math.cos(A), S = Math.sin(A);
+  function P(u, v) { return [C * u - S * v, -(S * u + C * v)]; }
+  function pts(list) { return list.map(function (p) { var q = P(p[0], p[1]); return q[0].toFixed(1) + "," + q[1].toFixed(1); }).join(" "); }
+
+  var STOPS = [
+    { name: "Grandmaster's Palace", fr: "Palais du Grand Maître", addr: "Palace Square, Valletta",
+      q: "Grandmaster's Palace, Palace Square, Valletta, Malta", at: [535, -35], tag: "Palais du Grand Maître" },
+    { name: "Bibliothèque nationale", fr: "Bibliotheca · National Library of Malta", addr: "Republic Square, Valletta",
+      q: "National Library of Malta, Republic Square, Valletta, Malta", at: [432, -50], tag: "Bibliothèque" },
+    { name: "Manoel Theatre", fr: "Théâtre Manoel", addr: "115 Old Theatre Street, Valletta",
+      q: "Manoel Theatre, Old Theatre Street, Valletta, Malta", at: [488, 138], tag: "Manoel Theatre" },
+    { name: "Casa Rocca Piccola", fr: "Palais de la famille de Piro", addr: "74 Republic Street, Valletta",
+      q: "Casa Rocca Piccola, 74 Republic Street, Valletta, Malta", at: [762, -20], tag: "Casa Rocca Piccola" },
+    { name: "Archbishop's Palace", fr: "Palais de l'Archevêque", addr: "Archbishop Street, Valletta",
+      q: "Archbishop's Palace, Archbishop Street, Valletta, Malta", at: [614, 30], tag: "Palais de l'Archevêque" }
+  ];
+  // Walking legs, following the street grid (u, v), from stop i to stop i+1.
+  var LEGS = [
+    [[535, -35], [535, -2], [432, -2], [432, -50]],
+    [[432, -50], [432, -2], [470, -2], [470, 138], [488, 138]],
+    [[488, 138], [470, 138], [470, -2], [762, -2], [762, -20]],
+    [[762, -20], [762, 2], [600, 2], [600, 30], [614, 30]]
+  ];
+
+  // Peninsula outline with the land-front bastions and Fort St Elmo at the tip.
+  var OUTLINE = [
+    [-40, -330], [-95, -265], [-40, -195], [-40, -40], [-20, -18], [-20, 18], [-40, 40], [-40, 190], [-95, 260], [-40, 325],
+    [60, 335], [160, 345], [300, 330], [450, 310], [600, 285], [750, 255], [900, 212], [1015, 172], [1085, 135],
+    [1105, 95], [1165, 85], [1215, 20], [1215, -20], [1165, -85], [1105, -95],
+    [1060, -150], [910, -215], [760, -258], [610, -300], [460, -335], [310, -350], [160, -352], [60, -345]
+  ];
+  var LONG = [-245, -185, -125, -65, 0, 50, 105, 160, 215, 270];
+  var LONG_NAMES = { "-65": "Merchants St", "0": "Republic St", "50": "Strait St", "105": "Old Bakery St" };
+  var CROSS = [80, 145, 210, 275, 340, 405, 470, 600, 665, 730, 795, 860, 925, 990, 1055, 1110];
+  var CROSS_NAMES = { "470": "Old Theatre St", "600": "Archbishop St" };
+  var LANDMARKS = [
+    { t: "City Gate", at: [-5, 0] },
+    { t: "St John's Co-Cathedral", at: [330, -95] },
+    { t: "Fort St Elmo", at: [1150, 0] }
+  ];
+
+  function el(name, attrs, parent) {
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  var svg = document.getElementById("map");
+  var defs = el("defs", {}, svg);
+  var clip = el("clipPath", { id: "pen" }, defs);
+  el("polygon", { points: pts(OUTLINE) }, clip);
+
+  var world = el("g", {}, svg);
+  // Sea wash + faint contour lines
+  el("rect", { x: -3000, y: -3000, width: 6000, height: 6000, fill: "var(--sea)" }, world);
+  for (var r = 1; r <= 6; r++) {
+    var off = r * 55;
+    var ring = OUTLINE.map(function (p) {
+      var cu = 580, len = Math.hypot(p[0] - cu, p[1]) || 1;
+      return [p[0] + (p[0] - cu) / len * off, p[1] + p[1] / len * off];
+    });
+    el("polygon", { points: pts(ring), fill: "none", stroke: "var(--sea-line)", "stroke-width": 1, "vector-effect": "non-scaling-stroke", opacity: (1 - r / 7).toFixed(2) }, world);
+  }
+  // Floriana, the land beyond City Gate
+  el("polygon", { points: pts([[-40, -560], [-700, -560], [-700, 560], [-40, 560], [-40, 325], [-95, 260], [-40, 190], [-40, -195], [-95, -265], [-40, -330]]), fill: "var(--land-far)" }, world);
+  el("polygon", { points: pts(OUTLINE), fill: "var(--land)" }, world);
+
+  // Street grid, clipped to the peninsula
+  var streets = el("g", { "clip-path": "url(#pen)" }, world);
+  var blocks = el("g", {}, streets);
+  for (var i = 0; i < LONG.length - 1; i++) {
+    for (var j = 0; j < CROSS.length - 1; j++) {
+      var u0 = CROSS[j] + 7, u1 = CROSS[j + 1] - 7, v0 = LONG[i] + 6, v1 = LONG[i + 1] - 6;
+      el("polygon", { points: pts([[u0, v0], [u1, v0], [u1, v1], [u0, v1]]), fill: "var(--block)" }, blocks);
+    }
+  }
+  LONG.forEach(function (v) {
+    el("polyline", { points: pts([[20, v], [1250, v]]), stroke: "var(--street)", "stroke-width": v === 0 ? 4 : 2, "vector-effect": "non-scaling-stroke", fill: "none" }, streets);
+  });
+  CROSS.forEach(function (u) {
+    el("polyline", { points: pts([[u, -400], [u, 400]]), stroke: "var(--street)", "stroke-width": 2, "vector-effect": "non-scaling-stroke", fill: "none" }, streets);
+  });
+  // Highlight the squares and the two palaces' blocks in limestone tint
+  [[[470, -8], [600, -8], [600, -60], [470, -60]],
+   [[405, -30], [463, -30], [463, -60], [405, -60]]].forEach(function (b) {
+    el("polygon", { points: pts(b), fill: "#4a3f2e" }, streets);
+  });
+  [[[405, -6], [463, -6], [463, -26], [405, -26]],
+   [[490, 6], [585, 6], [585, 44], [490, 44]]].forEach(function (b) {
+    el("polygon", { points: pts(b), fill: "#33323c" }, streets);
+  });
+
+  // Labels
+  function rotText(parent, cls, txt, at, angle, size) {
+    var p = P(at[0], at[1]);
+    var t = el("text", { class: cls, x: p[0], y: p[1], transform: "rotate(" + angle + " " + p[0] + " " + p[1] + ")", "text-anchor": "middle", "dominant-baseline": "central", "font-size": size }, parent);
+    t.textContent = txt;
+    return t;
+  }
+  rotText(world, "water-label", "Marsamxett Harbour", [500, 470], -36, 26);
+  rotText(world, "water-label", "Grand Harbour", [500, -500], -36, 30);
+  rotText(world, "land-label", "Floriana", [-300, 0], -36, 26);
+
+  var streetLabels = el("g", {}, world);
+  Object.keys(LONG_NAMES).forEach(function (v) {
+    [250, 880].forEach(function (u) {
+      rotText(streetLabels, "street-label", LONG_NAMES[v], [u, +v], -36, 10);
+    });
+  });
+  Object.keys(CROSS_NAMES).forEach(function (u) {
+    rotText(streetLabels, "street-label", CROSS_NAMES[u], [+u, 215], 54, 10);
+  });
+
+  var overlay = el("g", {}, world);
+  LANDMARKS.forEach(function (l) {
+    var p = P(l.at[0], l.at[1]);
+    var g = el("g", { "data-anchor": p.join(",") }, overlay);
+    el("circle", { class: "lm-dot", r: 2.5 }, g);
+    var t = el("text", { class: "lm-label", x: 6, y: 4 }, g);
+    t.textContent = l.t;
+  });
+
+  // Route legs
+  var routeG = el("g", {}, world);
+  var legEls = LEGS.map(function (leg) {
+    return el("polyline", { class: "route", points: pts(leg) }, routeG);
+  });
+  var legLen = LEGS.map(function (leg) {
+    var d = 0;
+    for (var k = 1; k < leg.length; k++) d += Math.hypot(leg[k][0] - leg[k - 1][0], leg[k][1] - leg[k - 1][1]);
+    return Math.round(d / 10) * 10;
+  });
+
+  // Markers (drawn last so they sit on top; kept at a constant screen size)
+  var markers = STOPS.map(function (s, idx) {
+    var p = P(s.at[0], s.at[1]);
+    var g = el("g", { class: "marker", "data-i": idx, "data-anchor": p.join(","), role: "button", "aria-label": (idx + 1) + ". " + s.name }, overlay);
+    el("circle", { class: "halo", r: 26 }, g);
+    el("circle", { class: "pin", r: 14 }, g);
+    var n = el("text", { class: "num" }, g); n.textContent = idx + 1;
+    var right = idx !== 1;
+    var t = el("text", { class: "tag", x: right ? 20 : -20, y: 1, "text-anchor": right ? "start" : "end", "dominant-baseline": "central" }, g);
+    t.textContent = s.tag;
+    return g;
+  });
+
+  // ---------- view transform ----------
+  var s = 1, tx = 0, ty = 0, fitS = 1;
+  var sheet = document.getElementById("sheet"), zoom = document.getElementById("zoom");
+  var anchored = Array.prototype.slice.call(overlay.querySelectorAll("[data-anchor]"));
+
+  function render() {
+    world.setAttribute("transform", "translate(" + tx.toFixed(2) + " " + ty.toFixed(2) + ") scale(" + s.toFixed(4) + ")");
+    var inv = (1 / s).toFixed(4);
+    anchored.forEach(function (g) {
+      g.setAttribute("transform", "translate(" + g.getAttribute("data-anchor") + ") scale(" + inv + ")");
+    });
+    Array.prototype.forEach.call(streetLabels.children, function (t) { t.setAttribute("font-size", (11 / s).toFixed(2)); });
+    streetLabels.style.display = s > fitS * 1.6 ? "" : "none";
+  }
+  function viewport() {
+    var w = svg.clientWidth, h = svg.clientHeight;
+    var top = 84, bottom = sheet.offsetHeight + 12;
+    return { w: w, h: h, top: top, bottom: bottom, cx: w / 2, cy: top + (h - top - bottom) / 2, ah: Math.max(120, h - top - bottom) };
+  }
+  function bounds(list) {
+    var xs = [], ys = [];
+    list.forEach(function (p) { var q = P(p[0], p[1]); xs.push(q[0]); ys.push(q[1]); });
+    return { x0: Math.min.apply(null, xs), x1: Math.max.apply(null, xs), y0: Math.min.apply(null, ys), y1: Math.max.apply(null, ys) };
+  }
+  function target(b, pad) {
+    var vp = viewport();
+    var ns = Math.min((vp.w - pad * 2) / (b.x1 - b.x0), (vp.ah - pad * 2) / (b.y1 - b.y0));
+    return { s: ns, tx: vp.cx - ns * (b.x0 + b.x1) / 2, ty: vp.cy - ns * (b.y0 + b.y1) / 2 };
+  }
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var anim = 0;
+  function animateTo(t) {
+    cancelAnimationFrame(anim);
+    if (reduce) { s = t.s; tx = t.tx; ty = t.ty; render(); return; }
+    var s0 = s, x0 = tx, y0 = ty, t0 = performance.now(), D = 450;
+    (function step(now) {
+      var k = Math.min(1, (now - t0) / D), e = 1 - Math.pow(1 - k, 3);
+      s = s0 + (t.s - s0) * e; tx = x0 + (t.tx - x0) * e; ty = y0 + (t.ty - y0) * e;
+      render();
+      if (k < 1) anim = requestAnimationFrame(step);
+    })(t0);
+  }
+  function fitRoute(animate) {
+    var all = [];
+    STOPS.forEach(function (st) { all.push(st.at); });
+    var t = target(bounds(all.concat([[330, -95], [930, -20], [870, 40], [300, -40]])), 40);
+    fitS = target(bounds(OUTLINE), 16).s;
+    if (animate) animateTo(t); else { s = t.s; tx = t.tx; ty = t.ty; render(); }
+  }
+  function focusStop(i) {
+    var leg = i > 0 ? LEGS[i - 1] : [STOPS[0].at];
+    var t = target(bounds(leg.concat([STOPS[i].at])), 90);
+    if (t.s > fitS * 9) {
+      var vp = viewport(), q = P(STOPS[i].at[0], STOPS[i].at[1]), ns = fitS * 9;
+      t = { s: ns, tx: vp.cx - ns * q[0], ty: vp.cy - ns * q[1] };
+    }
+    animateTo(t);
+  }
+  function clampS(v) { return Math.max(fitS * 0.6, Math.min(fitS * 14, v)); }
+  function zoomAt(px, py, f) {
+    var ns = clampS(s * f); f = ns / s;
+    tx = px - (px - tx) * f; ty = py - (py - ty) * f; s = ns;
+  }
+
+  // ---------- gestures ----------
+  var ptrs = new Map(), moved = false, downMarker = null, last = null, downMoved = 0;
+  function local(e) { var r = svg.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+  function pinchInfo() {
+    var a = Array.from(ptrs.values());
+    return { d: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), x: (a[0].x + a[1].x) / 2, y: (a[0].y + a[1].y) / 2 };
+  }
+  svg.addEventListener("pointerdown", function (e) {
+    cancelAnimationFrame(anim);
+    try { svg.setPointerCapture(e.pointerId); } catch (_) {}
+    ptrs.set(e.pointerId, local(e));
+    if (ptrs.size === 1) {
+      moved = false;
+      var m = e.target.closest && e.target.closest(".marker");
+      downMarker = m ? +m.getAttribute("data-i") : null;
+    }
+    last = ptrs.size === 2 ? pinchInfo() : null;
+    svg.classList.add("dragging");
+  });
+  svg.addEventListener("pointermove", function (e) {
+    if (!ptrs.has(e.pointerId)) return;
+    var prev = ptrs.get(e.pointerId), cur = local(e);
+    ptrs.set(e.pointerId, cur);
+    if (ptrs.size === 1) {
+      var dx = cur.x - prev.x, dy = cur.y - prev.y;
+      if (Math.abs(dx) + Math.abs(dy) > 0) { tx += dx; ty += dy; }
+    } else if (ptrs.size === 2 && last) {
+      var now = pinchInfo();
+      zoomAt(now.x, now.y, now.d / (last.d || now.d));
+      tx += now.x - last.x; ty += now.y - last.y;
+      last = now;
+      moved = true;
+    }
+    if (!moved && prev && Math.hypot(cur.x - prev.x, cur.y - prev.y) > 0) {
+      downMoved += Math.hypot(cur.x - prev.x, cur.y - prev.y);
+      if (downMoved > 8) moved = true;
+    }
+    render();
+  });
+  function up(e) {
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.delete(e.pointerId);
+    if (ptrs.size === 0) {
+      svg.classList.remove("dragging");
+      if (!moved && downMarker !== null) select(downMarker, true);
+      downMarker = null; downMoved = 0;
+    }
+    last = ptrs.size === 2 ? pinchInfo() : null;
+  }
+  svg.addEventListener("pointerup", up);
+  svg.addEventListener("pointercancel", up);
+  svg.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    var p = local(e);
+    zoomAt(p.x, p.y, Math.exp(-e.deltaY * 0.0022));
+    render();
+  }, { passive: false });
+  svg.addEventListener("dblclick", function (e) {
+    var p = local(e); zoomAt(p.x, p.y, 1.8); render();
+  });
+  function zoomBtn(f) {
+    var vp = viewport(), ns = clampS(s * f), k = ns / s;
+    animateTo({ s: ns, tx: vp.cx - (vp.cx - tx) * k, ty: vp.cy - (vp.cy - ty) * k });
+  }
+  document.getElementById("zin").onclick = function () { zoomBtn(1.6); };
+  document.getElementById("zout").onclick = function () { zoomBtn(1 / 1.6); };
+  document.getElementById("zfit").onclick = function () { fitRoute(true); };
+
+  // ---------- state ----------
+  var KEY = "notte-bianca-valletta-2026";
+  var state = { sel: 0, done: [false, false, false, false, false] };
+  try {
+    var saved = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (saved && Array.isArray(saved.done) && saved.done.length === 5) state = saved;
+  } catch (_) {}
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
+
+  var chips = document.getElementById("chips");
+  var chipEls = STOPS.map(function (st, i) {
+    var b = document.createElement("button");
+    b.className = "chip";
+    b.setAttribute("aria-label", "Étape " + (i + 1) + " : " + st.name);
+    b.onclick = function () { select(i, true); };
+    chips.appendChild(b);
+    return b;
+  });
+
+  function gmaps(q) { return "https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=" + encodeURIComponent(q); }
+  var allUrl = "https://www.google.com/maps/dir/?api=1&travelmode=walking&origin=" + encodeURIComponent(STOPS[0].q) +
+    "&destination=" + encodeURIComponent(STOPS[4].q) +
+    "&waypoints=" + STOPS.slice(1, 4).map(function (x) { return encodeURIComponent(x.q); }).join("%7C");
+  document.getElementById("all").href = allUrl;
+
+  var PIN_SVG = '<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>';
+  function updateUI() {
+    var i = state.sel, st = STOPS[i];
+    document.getElementById("cStep").textContent = "Étape " + (i + 1) + " sur 5";
+    document.getElementById("cName").textContent = st.name;
+    document.getElementById("cFr").textContent = st.fr;
+    document.getElementById("cAddr").textContent = st.addr;
+    var leg = document.getElementById("cLeg");
+    if (i === 0) leg.textContent = "Point de départ du parcours";
+    else leg.textContent = "Depuis l'étape " + i + " : ≈ " + legLen[i - 1] + " m · " + Math.max(1, Math.round(legLen[i - 1] / 75)) + " min à pied";
+    document.getElementById("go").href = gmaps(st.q);
+    var v = document.getElementById("visit");
+    v.innerHTML = state.done[i] ? PIN_SVG + "Visitée" : "Marquer visitée";
+    v.classList.toggle("is-done", state.done[i]);
+    var n = document.getElementById("next");
+    n.textContent = i < 4 ? "Étape " + (i + 2) + " →" : "← Revenir à 1";
+    chipEls.forEach(function (c, k) {
+      c.className = "chip" + (k === i ? " sel" : "") + (state.done[k] ? " done" : "");
+      c.innerHTML = (k + 1) + (state.done[k] ? '<span class="tick">✓</span>' : "");
+    });
+    markers.forEach(function (m, k) {
+      m.setAttribute("class", "marker" + (k === i ? " sel" : "") + (state.done[k] ? " done" : ""));
+    });
+    legEls.forEach(function (l, k) { l.setAttribute("class", "route" + (k === i - 1 ? " active" : "")); });
+    document.getElementById("doneCount").textContent = state.done.filter(Boolean).length;
+    // keep the selected marker drawn above its neighbours
+    overlay.appendChild(markers[i]);
+    zoom.style.bottom = (sheet.offsetHeight + 16) + "px";
+  }
+  function select(i, fly) {
+    state.sel = i; save(); updateUI();
+    if (fly) focusStop(i);
+  }
+  document.getElementById("visit").onclick = function () {
+    state.done[state.sel] = !state.done[state.sel]; save(); updateUI();
+  };
+  document.getElementById("next").onclick = function () {
+    select(state.sel < 4 ? state.sel + 1 : 0, true);
+  };
+
+  updateUI();
+  fitRoute(false);
+  var rz;
+  window.addEventListener("resize", function () {
+    clearTimeout(rz);
+    rz = setTimeout(function () { zoom.style.bottom = (sheet.offsetHeight + 16) + "px"; fitRoute(false); }, 120);
+  });
+})();
+</script>
+
+</body>
+</html>
